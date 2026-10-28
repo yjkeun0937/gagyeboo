@@ -1,0 +1,97 @@
+/* 디자인 토큰: 방안지(모눈종이) 바탕 + 볼펜 파랑 + 인주 빨강 */
+:root {
+  color-scheme: light dark;
+
+  --paper: #f6f9fc;
+  --paper-grid: #dbe5f1;
+  --surface: #ffffff;
+  --surface-2: #eef3f9;
+  --ink: #1b2430;
+  --ink-2: #4a5666;
+  --ink-3: #7d8896;
+  --line: #d3dce8;
+  --line-strong: #aebccd;
+  --rule: #c9d6e6;
+
+  --primary: #2338a0;
+  --primary-ink: #ffffff;
+  --primary-soft: #e3e8fa;
+  --danger: #b3261e;
+  --danger-soft: #fbe7e5;
+  --amber: #9a6700;
+  --amber-soft: #fdf1d3;
+  --sun: #c0392b;
+  --sat: #2a5db0;
+
+  --radius: 8px;
+  --radius-sm: 5px;
+  --shadow: 0 6px 24px rgba(20, 35, 70, 0.14);
+  --focus: 0 0 0 3px rgba(35, 56, 160, 0.35);
+
+  --top-h: 56px;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+
+  --font: 'IBM Plex Sans KR', system-ui, -apple-system, 'Segoe UI', 'Noto Sans KR', sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --paper: #131a24;
+    --paper-grid: #1d2735;
+    --surface: #1a2330;
+    --surface-2: #222d3d;
+    --ink: #e8edf4;
+    --ink-2: #b2bccb;
+    --ink-3: #8592a4;
+    --line: #2d3a4d;
+    --line-strong: #43536b;
+    --rule: #34445a;
+
+    --primary: #8fa4ff;
+    --primary-ink: #0f1626;
+    --primary-soft: #26325c;
+    --danger: #ff8a80;
+    --danger-soft: #3d2220;
+    --amber: #f0b429;
+    --amber-soft: #3a2f12;
+    --sun: #ff8a7a;
+    --sat: #7fb0ff;
+    --shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+    --focus: 0 0 0 3px rgba(143, 164, 255, 0.45);
+  }
+}
+
+:root[data-theme='dark'] {
+  --paper: #131a24;
+  --paper-grid: #1d2735;
+  --surface: #1a2330;
+  --surface-2: #222d3d;
+  --ink: #e8edf4;
+  --ink-2: #b2bccb;
+  --ink-3: #8592a4;
+  --line: #2d3a4d;
+  --line-strong: #43536b;
+  --rule: #34445a;
+
+  --primary: #8fa4ff;
+  --primary-ink: #0f1626;
+  --primary-soft: #26325c;
+  --danger: #ff8a80;
+  --danger-soft: #3d2220;
+  --amber: #f0b429;
+  --amber-soft: #3a2f12;
+  --sun: #ff8a7a;
+  --sat: #7fb0ff;
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  --focus: 0 0 0 3px rgba(143, 164, 255, 0.45);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}

@@ -1,0 +1,12 @@
+node_modules
+dist
+*.log
+.DS_Store
+# 개인 데이터가 저장소에 올라가지 않도록 제외
+*.xlsx
+*.xls
+*.csv
+*backup*.json
+가계부*
+e2e/out
+.vite
