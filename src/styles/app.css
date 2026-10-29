@@ -2181,7 +2181,7 @@ select.input {
   text-align: center;
 }
 .chart-sum {
-  margin: 12px 0 0;
+  margin: 18px 0 0;
   text-align: right;
 }
 
@@ -2191,4 +2191,19 @@ select.input {
   fill: var(--ink-2);
   font-family: var(--font);
   font-variant-numeric: tabular-nums;
+}
+
+/* 분류 버튼 3단계: 2는 붉은 계열로 1과 구분 (▲/▼ 기호도 함께 써서 색에만 의존하지 않음) */
+.chip[data-mode='2'] {
+  color: var(--danger);
+  font-weight: 700;
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+.chip-dir {
+  font-size: 0.7rem;
+  line-height: 1;
+}
+.chart-val.is-down {
+  fill: var(--danger);
 }

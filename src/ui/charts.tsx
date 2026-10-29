@@ -353,17 +353,20 @@ export function RankedBars({ items, total }: { items: RankItem[]; total: number 
   );
 }
 
-/* ───────── 누적 영역 (여러 계열을 위로 쌓음) ───────── */
+/* ───────── 누적 영역 (여러 계열을 위로·아래로 쌓음) ───────── */
 
 export interface StackSeries {
   key: string;
   label: string;
   color: string;
   values: number[];
+  /** 'down'이면 0 아래쪽으로 쌓는다. 값은 항상 양수로 주고, 축·라벨도 양수로 표시한다. */
+  side?: 'up' | 'down';
 }
 
 /**
- * 엑셀의 '누적 영역형'과 같은 차트. 계열은 주어진 순서대로 아래에서 위로 쌓인다.
+ * 엑셀의 '누적 영역형'과 같은 차트. 계열은 주어진 순서대로 0선에서 멀어지는 방향으로 쌓인다.
+ * side가 'down'인 계열은 0 아래쪽(음수 영역)에 쌓이지만, 눈금·정점 표시·툴팁은 모두 양수 금액이다.
  * 색은 계열(분류)에 고정되어 있어, 선택이 바뀌어도 남은 계열의 색은 변하지 않는다.
  */
 export function StackedAreaChart({
@@ -382,89 +385,134 @@ export function StackedAreaChart({
   const [ref, w] = useWidth();
   const svgRef = useRef<SVGSVGElement>(null);
   const [active, setActive] = useState<number | null>(null);
+  const n = labels.length;
+  const ups = series.filter((s) => s.side !== 'down');
+  const downs = series.filter((s) => s.side === 'down');
+  const hasDown = downs.length > 0;
   const L = 44;
   const R = 30;
   const T = 24;
-  const B = 24;
+  const B = hasDown ? 44 : 24;
+  const H = hasDown ? height + 60 : height;
   const pw = w - L - R;
-  const ph = height - T - B;
-  const n = labels.length;
-  // 월별 누적 경계: cum[s][i] = s번째 계열 위쪽 경계
-  const cum: number[][] = [];
-  series.forEach((s, si) => {
-    cum.push(s.values.map((v, i) => (si === 0 ? 0 : cum[si - 1][i]) + v));
-  });
-  const totals = labels.map((_, i) => (cum.length ? cum[cum.length - 1][i] : 0));
-  const { max: top, step } = niceScale(Math.max(0, ...totals), 4);
+  const ph = H - T - B;
+
+  // 월별 누적 경계 (0선에서 바깥쪽으로 얼마나 쌓였는지, 양수)
+  const stack = (list: StackSeries[]) => {
+    const cum: number[][] = [];
+    list.forEach((sr, si) => cum.push(sr.values.map((v, i) => (si === 0 ? 0 : cum[si - 1][i]) + v)));
+    return cum;
+  };
+  const cumUp = stack(ups);
+  const cumDown = stack(downs);
+  const sums = (cum: number[][]) => labels.map((_, i) => (cum.length ? cum[cum.length - 1][i] : 0));
+  const totalUp = sums(cumUp);
+  const totalDown = sums(cumDown);
+  const maxUp = Math.max(0, ...totalUp);
+  const maxDown = Math.max(0, ...totalDown);
+  // 위·아래가 같은 눈금 간격을 쓰되, 범위는 각각 따로 잡는다
+  const { step } = niceScale(Math.max(maxUp, maxDown), hasDown ? 3 : 4);
+  const topUp = maxUp > 0 || !hasDown ? Math.max(step, Math.ceil(maxUp / step - 1e-9) * step) : 0;
+  const topDown = hasDown ? Math.max(step, Math.ceil(maxDown / step - 1e-9) * step) : 0;
+  const span = topUp + topDown;
+  /** signed: 위쪽은 +, 아래쪽은 − */
+  const y = (v: number) => T + ph - ((v + topDown) / span) * ph;
   const x = (i: number) => L + (n <= 1 ? pw / 2 : (pw * i) / (n - 1));
-  const y = (v: number) => T + ph - (v / top) * ph;
   const ticks: number[] = [];
-  for (let v = 0; v <= top + 1e-9; v += step) ticks.push(v);
+  for (let v = -topDown; v <= topUp + 1e-9; v += step) ticks.push(Math.round(v));
   const band = n <= 1 ? pw : pw / (n - 1);
   // 월 간격이 넓으면 정확한 금액, 좁으면 '만' 단위로 줄여 표시
   const fmtTotal = (v: number) => (band >= 64 ? won(v) : compactWon(v));
-  // 총액 라벨은 큰 값부터 놓되, 이미 놓은 라벨과 가로로 겹치면 생략한다 (생략된 달은 툴팁으로 확인)
-  const shownTotal = new Set<number>();
-  const placed: [number, number][] = [];
-  labels
-    .map((_, i) => i)
-    .filter((i) => totals[i] > 0)
-    .sort((p, q) => totals[q] - totals[p])
-    .forEach((i) => {
-      const half = (fmtTotal(totals[i]).length * 6.4) / 2 + 3;
-      const lo = x(i) - half;
-      const hi = x(i) + half;
-      if (placed.every(([a, b]) => hi < a || lo > b)) {
-        placed.push([lo, hi]);
-        shownTotal.add(i);
-      }
-    });
+  // 정점 라벨은 큰 값부터 놓되, 이미 놓은 라벨과 가로로 겹치면 생략한다 (생략된 달은 툴팁으로 확인)
+  const pickLabels = (totals: number[]) => {
+    const shown = new Set<number>();
+    const placed: [number, number][] = [];
+    labels
+      .map((_, i) => i)
+      .filter((i) => totals[i] > 0)
+      .sort((p, q) => totals[q] - totals[p])
+      .forEach((i) => {
+        const half = (fmtTotal(totals[i]).length * 6.4) / 2 + 3;
+        const lo = x(i) - half;
+        const hi = x(i) + half;
+        if (placed.every(([a, b]) => hi < a || lo > b)) {
+          placed.push([lo, hi]);
+          shown.add(i);
+        }
+      });
+    return shown;
+  };
+  const shownUp = pickLabels(totalUp);
+  const shownDown = pickLabels(totalDown);
   const axisEvery = band < 40 ? 2 : 1;
+
+  const path = (cum: number[][], si: number, sign: 1 | -1) => {
+    const outer = cum[si].map((v, i) => `${x(i)},${y(sign * v)}`);
+    const inner = (si === 0 ? labels.map(() => 0) : cum[si - 1]).map((v, i) => `${x(i)},${y(sign * v)}`).reverse();
+    return `M${outer.join(' L')} L${inner.join(' L')} Z`;
+  };
 
   const show = (i: number) => {
     setActive(i);
-    const lines = series
-      .map((s) => ({ s, v: s.values[i] }))
-      .filter((x) => x.v > 0)
+    const lines: string[] = [];
+    ups
+      .map((sr) => ({ sr, v: sr.values[i] }))
+      .filter((r) => r.v > 0)
       .reverse() // 그래프에서 위에 있는 계열이 위에 오도록
-      .map((x) => `${x.s.label} ${won(x.v)}원`);
-    lines.push(`합계 ${won(totals[i])}원`);
-    tipAt(svgRef.current, x(i), y(totals[i]), { title: tipTitle(i), lines });
+      .forEach((r) => lines.push(`${r.sr.label} ${won(r.v)}원`));
+    if (hasDown) {
+      lines.push(`위쪽 합계 ${won(totalUp[i])}원`);
+      downs
+        .map((sr) => ({ sr, v: sr.values[i] }))
+        .filter((r) => r.v > 0)
+        .forEach((r) => lines.push(`${r.sr.label} ${won(r.v)}원`));
+      lines.push(`아래쪽 합계 ${won(totalDown[i])}원`);
+    } else {
+      lines.push(`합계 ${won(totalUp[i])}원`);
+    }
+    tipAt(svgRef.current, x(i), y(totalUp[i]), { title: tipTitle(i), lines });
   };
 
   return (
     <div ref={ref} class="chart">
-      <svg
-        ref={svgRef}
-        width={w}
-        height={height}
-        role="img"
-        aria-label={ariaLabel}
-        onPointerLeave={() => setActive(null)}
-      >
+      <svg ref={svgRef} width={w} height={H} role="img" aria-label={ariaLabel} onPointerLeave={() => setActive(null)}>
         {ticks.map((v) => (
           <g key={v}>
-            <line x1={L} x2={w - R} y1={y(v)} y2={y(v)} stroke="var(--line)" stroke-width="1" />
+            <line
+              x1={L}
+              x2={w - R}
+              y1={y(v)}
+              y2={y(v)}
+              stroke={v === 0 && hasDown ? 'var(--ink-3)' : 'var(--line)'}
+              stroke-width={v === 0 && hasDown ? 1.5 : 1}
+            />
             <text x={L - 6} y={y(v) + 4} text-anchor="end" class="chart-tick">
-              {compactWon(v)}
+              {compactWon(Math.abs(v))}
             </text>
           </g>
         ))}
-        {series.map((s, si) => {
-          const upper = cum[si].map((v, i) => `${x(i)},${y(v)}`);
-          const lower = (si === 0 ? labels.map(() => 0) : cum[si - 1]).map((v, i) => `${x(i)},${y(v)}`).reverse();
-          return (
-            <path
-              key={s.key}
-              d={`M${upper.join(' L')} L${lower.join(' L')} Z`}
-              fill={s.color}
-              fill-opacity="0.9"
-              stroke="var(--surface)"
-              stroke-width="1.5"
-              stroke-linejoin="round"
-            />
-          );
-        })}
+        {ups.map((sr, si) => (
+          <path
+            key={sr.key}
+            d={path(cumUp, si, 1)}
+            fill={sr.color}
+            fill-opacity="0.9"
+            stroke="var(--surface)"
+            stroke-width="1.5"
+            stroke-linejoin="round"
+          />
+        ))}
+        {downs.map((sr, si) => (
+          <path
+            key={sr.key}
+            d={path(cumDown, si, -1)}
+            fill={sr.color}
+            fill-opacity="0.9"
+            stroke="var(--surface)"
+            stroke-width="1.5"
+            stroke-linejoin="round"
+          />
+        ))}
         {active !== null ? (
           <line
             x1={x(active)}
@@ -478,13 +526,18 @@ export function StackedAreaChart({
         ) : null}
         {labels.map((l, i) => (
           <g key={i}>
-            {shownTotal.has(i) ? (
-              <text x={x(i)} y={y(totals[i]) - 7} text-anchor="middle" class="chart-val">
-                {fmtTotal(totals[i])}
+            {shownUp.has(i) ? (
+              <text x={x(i)} y={y(totalUp[i]) - 7} text-anchor="middle" class="chart-val">
+                {fmtTotal(totalUp[i])}
+              </text>
+            ) : null}
+            {shownDown.has(i) ? (
+              <text x={x(i)} y={y(-totalDown[i]) + 15} text-anchor="middle" class="chart-val is-down">
+                {fmtTotal(totalDown[i])}
               </text>
             ) : null}
             {i % axisEvery === 0 ? (
-              <text x={x(i)} y={height - 6} text-anchor="middle" class="chart-tick">
+              <text x={x(i)} y={H - 6} text-anchor="middle" class="chart-tick">
                 {l}
               </text>
             ) : null}
@@ -496,7 +549,7 @@ export function StackedAreaChart({
               fill="transparent"
               tabIndex={0}
               role="button"
-              aria-label={`${tipTitle(i)} 합계 ${won(totals[i])}원`}
+              aria-label={`${tipTitle(i)} ${hasDown ? `위쪽 합계 ${won(totalUp[i])}원, 아래쪽 합계 ${won(totalDown[i])}원` : `합계 ${won(totalUp[i])}원`}`}
               onPointerEnter={hoverOnly(() => show(i))}
               onClick={() => show(i)}
               onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), show(i))}

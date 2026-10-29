@@ -31,10 +31,35 @@ for (const [name, vp] of [['desktop', { width: 1366, height: 900 }], ['mobile', 
   await chips.nth(0).click(); await chips.nth(2).click(); await page.waitForTimeout(200);
   ok((await layers()) === 2, '두 분류만 선택 → 2개 영역');
   await page.screenshot({ path: `e2e/out/r2s-${name}-two.png` });
+  // 3단계: 선택안함 → 선택함1(위) → 선택함2(아래, 붉은색) → 선택안함
+  ok((await chips.nth(0).getAttribute('data-mode')) === '1', '한 번 누르면 선택함1');
   await chips.nth(0).click(); await page.waitForTimeout(150);
-  ok((await layers()) === 1, '선택 해제 토글');
+  ok((await chips.nth(0).getAttribute('data-mode')) === '2', '두 번째 누르면 선택함2');
+  const red = await chips.nth(0).evaluate((el) => getComputedStyle(el).borderTopColor);
+  const blue = await chips.nth(2).evaluate((el) => getComputedStyle(el).borderTopColor);
+  console.log('  border colors', red, blue);
+  ok(red !== blue && /^rgb\((1[5-9]\d|2\d\d),/.test(red), '선택함2는 붉은 계열로 선택함1과 구분');
+  ok((await layers()) === 2, '선택함2도 그래프에 표시');
+  const tickTexts = await page.evaluate(() => [...document.querySelectorAll('.stat-card svg text.chart-tick')].map((t) => t.textContent));
+  ok(!tickTexts.some((t) => /[-−]/.test(t)), 'y축 눈금은 음수 부호 없이 양수로 표시: ' + tickTexts.filter((t) => /만|^\d/.test(t)).join(','));
+  const geo = await page.evaluate(() => {
+    const paths = [...document.querySelectorAll('.stat-card svg path[fill-opacity]')];
+    const zero = [...document.querySelectorAll('.stat-card svg line')].find((l) => l.getAttribute('stroke-width') === '1.5');
+    const zy = parseFloat(zero.getAttribute('y1'));
+    // path 좌표 중 0선 아래(y 큼)가 있는 path / 위가 있는 path
+    const ys = paths.map((p) => [...p.getAttribute('d').matchAll(/,([\d.]+)/g)].map((m) => parseFloat(m[1])));
+    return { zy, below: ys.map((a) => a.every((y) => y >= zy - 0.01)), above: ys.map((a) => a.every((y) => y <= zy + 0.01)) };
+  });
+  ok(geo.below.filter(Boolean).length === 1 && geo.above.filter(Boolean).length === 1, '선택함2 분류는 0선 아래, 선택함1은 0선 위에 쌓임');
+  await page.screenshot({ path: `e2e/out/r2s-${name}-neg.png` });
+  const downLabel = await page.locator('.chart-val.is-down').count();
+  ok(downLabel > 0, `아래쪽 정점 라벨 ${downLabel}개 (양수 표기)`);
+  await chips.nth(0).click(); await page.waitForTimeout(150);
+  ok((await chips.nth(0).getAttribute('data-mode')) === '0' && (await layers()) === 1, '세 번째 누르면 선택안함');
+  await chips.nth(1).click(); await chips.nth(1).click(); await page.waitForTimeout(150);
+  ok((await page.locator('.chart-filter .chip[data-mode="2"]').count()) === 1, '일부를 선택함2로 둔 상태에서');
   await page.getByRole('button', { name: '전체', exact: true }).click(); await page.waitForTimeout(200);
-  ok((await layers()) === nChips, '전체 → 모든 분류 선택');
+  ok((await layers()) === nChips && (await page.locator('.chart-filter .chip[data-mode="1"]').count()) === nChips, '전체 → 모든 분류를 선택함1로');
   // 툴팁
   const col = page.locator('.stat-card svg rect[role=button]').nth(9);
   await page.locator('.stat-card svg').first().evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' })); await page.waitForTimeout(600);

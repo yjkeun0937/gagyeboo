@@ -478,8 +478,17 @@ function MonthlyStats() {
 
 /* ───────── 연간 ───────── */
 
-/** 누적 영역 그래프에서 빼 둔 분류 (기본은 모두 선택). 미분류는 'none' */
-const yearOff = signal<Set<string>>(new Set());
+/**
+ * 누적 영역 그래프의 분류별 상태: 0 선택 안 함 / 1 선택함(0 위로 쌓음) / 2 선택함(0 아래로 쌓음).
+ * 기록이 없으면 1 (기본은 모두 위쪽). 미분류는 'none'.
+ */
+type PickMode = 0 | 1 | 2;
+const yearMode = signal<Record<string, PickMode>>({});
+const MODE_LABEL: Record<PickMode, string> = {
+  0: '선택 안 함',
+  1: '위쪽 그래프에 표시',
+  2: '아래쪽(음수 방향) 그래프에 표시',
+};
 const catKey = (k: ID | null) => k ?? 'none';
 /** 표의 막대는 각 행(분류)의 최대 월 지출을 100%로 잡는다 */
 const rowMax = (months: number[]) => Math.max(1, ...months);
@@ -491,17 +500,29 @@ function YearlyStats() {
     () => yearStats(entries.value, year, today.value, order),
     [entries.value, year, today.value, categoriesSorted.value],
   );
-  const off = yearOff.value;
+  const modes = yearMode.value;
+  const modeOf = (k: ID | null): PickMode => modes[catKey(k)] ?? 1;
   const labels = Array.from({ length: 12 }, (_, i) => `${i + 1}월`);
   const present = y.rows.map((r) => r.category);
-  const picked = y.rows.filter((r) => !off.has(catKey(r.category)));
-  const pickedTotal = picked.reduce((a, r) => a + r.total, 0);
-  const toggle = (k: ID | null) => {
-    const next = new Set(off);
-    if (next.has(catKey(k))) next.delete(catKey(k));
-    else next.add(catKey(k));
-    yearOff.value = next;
+  const upRows = y.rows.filter((r) => modeOf(r.category) === 1);
+  const downRows = y.rows.filter((r) => modeOf(r.category) === 2);
+  const sumOf = (rows: typeof y.rows) => rows.reduce((a, r) => a + r.total, 0);
+  /** 선택 안 함 → 선택함1(위) → 선택함2(아래) → 선택 안 함 */
+  const cycle = (k: ID | null) => {
+    const next = ((modeOf(k) + 1) % 3) as PickMode;
+    yearMode.value = { ...modes, [catKey(k)]: next };
   };
+  const setAll = (m: PickMode) => {
+    yearMode.value = Object.fromEntries(present.map((k) => [catKey(k), m]));
+  };
+  const toSeries = (rows: typeof y.rows, side: 'up' | 'down') =>
+    rows.map((r) => ({
+      key: catKey(r.category),
+      label: catName(r.category),
+      color: catColor(r.category),
+      values: r.months,
+      side,
+    }));
 
   return (
     <>
@@ -533,46 +554,63 @@ function YearlyStats() {
           />
           <Card
             title="월별 지출 (분류별 누적)"
-            note="분류를 눌러 켜고 끌 수 있습니다. 선택한 분류가 위로 쌓여 보입니다."
+            note="분류 버튼을 누를 때마다 선택 안 함 → 위쪽(파랑) → 아래쪽(빨강) 순으로 바뀝니다. 아래쪽으로 고른 분류는 0선 아래에 쌓이며, 금액은 모두 양수로 표시됩니다."
           >
             <div class="chips chart-filter" role="group" aria-label="그래프에 표시할 분류">
-              <button type="button" class="chip" onClick={() => (yearOff.value = new Set(present.map(catKey)))}>
+              <button type="button" class="chip" onClick={() => setAll(0)}>
                 모두 지우기
               </button>
-              <button type="button" class="chip" onClick={() => (yearOff.value = new Set())}>
+              <button type="button" class="chip" onClick={() => setAll(1)}>
                 전체
               </button>
-              {present.map((id) => (
-                <button
-                  key={catKey(id)}
-                  type="button"
-                  class="chip"
-                  aria-pressed={!off.has(catKey(id))}
-                  onClick={() => toggle(id)}
-                >
-                  <CategoryDot color={catColor(id)} />
-                  {catName(id)}
-                </button>
-              ))}
+              {present.map((id) => {
+                const m = modeOf(id);
+                return (
+                  <button
+                    key={catKey(id)}
+                    type="button"
+                    class="chip"
+                    data-mode={m}
+                    aria-pressed={m > 0}
+                    aria-label={`${catName(id)}: ${MODE_LABEL[m]}. 누르면 다음 상태로 바뀝니다`}
+                    title={MODE_LABEL[m]}
+                    onClick={() => cycle(id)}
+                  >
+                    <CategoryDot color={catColor(id)} />
+                    {catName(id)}
+                    {m > 0 ? (
+                      <span class="chip-dir" aria-hidden="true">
+                        {m === 1 ? '▲' : '▼'}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
             </div>
-            {picked.length === 0 ? (
+            {upRows.length + downRows.length === 0 ? (
               <p class="hint chart-empty">표시할 분류를 선택하세요.</p>
             ) : (
               <>
                 <StackedAreaChart
-                  series={picked.map((r) => ({
-                    key: catKey(r.category),
-                    label: catName(r.category),
-                    color: catColor(r.category),
-                    values: r.months,
-                  }))}
+                  series={[...toSeries(upRows, 'up'), ...toSeries(downRows, 'down')]}
                   labels={labels}
                   tipTitle={(i) => `${year}년 ${i + 1}월`}
                   height={260}
-                  ariaLabel={`${year}년 선택한 ${picked.length}개 분류의 월별 지출 누적 영역 그래프`}
+                  ariaLabel={`${year}년 월별 지출 누적 영역 그래프. 위쪽 ${upRows.length}개 분류${
+                    downRows.length ? `, 아래쪽 ${downRows.length}개 분류` : ''
+                  }`}
                 />
                 <p class="hint chart-sum">
-                  선택한 {picked.length}개 분류 합계 <b class="num">{wonText(pickedTotal)}</b>
+                  {downRows.length ? (
+                    <>
+                      위쪽 {upRows.length}개 분류 <b class="num">{wonText(sumOf(upRows))}</b> · 아래쪽 {downRows.length}
+                      개 분류 <b class="num">{wonText(sumOf(downRows))}</b>
+                    </>
+                  ) : (
+                    <>
+                      선택한 {upRows.length}개 분류 합계 <b class="num">{wonText(sumOf(upRows))}</b>
+                    </>
+                  )}
                 </p>
               </>
             )}
