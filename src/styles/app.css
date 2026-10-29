@@ -2402,3 +2402,32 @@ select.input {
 .btn-row.is-center {
   align-items: center;
 }
+
+/* 로그아웃 대화상자: 좁은 화면에서도 가로로 넘치지 않게 세로로 쌓는다 */
+.modal-foot {
+  flex-wrap: wrap;
+}
+.modal,
+.modal-body {
+  min-width: 0;
+}
+.logout-erase {
+  align-items: flex-start;
+}
+.logout-erase input {
+  flex: none;
+  margin-top: 2px;
+}
+.logout-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.logout-actions .btn {
+  width: 100%;
+  height: auto;
+  min-height: 40px;
+  padding-block: 8px;
+  white-space: normal;
+  line-height: 1.35;
+}

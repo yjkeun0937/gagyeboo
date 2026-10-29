@@ -212,6 +212,55 @@ ok(google.json('entries-2026.json').entries.filter((e) => !e.deleted).length ===
 await I.signIn(); await I.waitStatus('idle'); await I.page.waitForTimeout(300);
 ok((await I.page.locator('.empty').count()) === 0, '다시 로그인하면 데이터가 돌아옴');
 
+console.log('\n[J2] 모바일 로그아웃 대화상자 폭 + 드라이브 데이터 삭제');
+{
+  const dlg = async (d) => {
+    await d.openAccount();
+    await d.page.getByRole('button', { name: '로그아웃' }).click();
+    await d.page.waitForSelector('.modal[aria-label="로그아웃"]');
+  };
+  await dlg(I);
+  const fits = await I.page.evaluate(() => {
+    const m = document.querySelector('.modal[aria-label="로그아웃"]');
+    const r = m.getBoundingClientRect();
+    const over = [...m.querySelectorAll('*')].filter((el) => el.getBoundingClientRect().right > r.right + 0.5 || el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflowX === 'visible' && el.getBoundingClientRect().right > innerWidth);
+    return { w: r.width, vw: innerWidth, over: over.map((e) => e.tagName + '.' + e.className).slice(0, 5) };
+  });
+  ok(fits.w <= fits.vw && fits.over.length === 0, '모바일 로그아웃 창이 화면 안에 들어옴 ' + JSON.stringify(fits));
+  await I.page.screenshot({ path: 'e2e/out/r3-mobile-logout.png' });
+  await I.page.locator('.logout-erase input').check();
+  await I.page.screenshot({ path: 'e2e/out/r3-mobile-logout-erase.png' });
+  // 확인 창에서 취소하면 아무것도 지워지지 않는다
+  await I.page.getByRole('button', { name: '드라이브와 이 기기 데이터 모두 삭제' }).click();
+  await I.page.waitForSelector('.modal[aria-label="드라이브의 데이터를 지웁니다"]');
+  await I.page.screenshot({ path: 'e2e/out/r3-mobile-erase-confirm.png' });
+  await I.page.getByRole('button', { name: '취소' }).last().click();
+  await I.page.waitForTimeout(300);
+  ok(google.files().length === 2 && (await I.status()) !== 'local', '확인 창에서 취소하면 그대로');
+  // 삭제 진행: 드라이브가 비고, 이 기기 데이터도 지워진다
+  await I.page.getByRole('button', { name: '드라이브와 이 기기 데이터 모두 삭제' }).click();
+  await I.page.getByRole('button', { name: '드라이브 데이터 삭제', exact: true }).click();
+  await I.page.waitForTimeout(800);
+  ok(google.files().length === 0, '드라이브의 앱 데이터가 모두 삭제됨');
+  ok((await I.status()) === 'local' && (await I.page.locator('.empty').count()) === 1, '로그아웃되고 이 기기도 비어 있음');
+  // 다른 기기(A)가 다시 로그인하면 빈 드라이브에 자기 데이터를 올린다 → 완전히 없애려면 그 기기에서도 지워야 함
+  await A.signIn(); await A.waitStatus('idle');
+  ok(google.files().length === 2, '다른 기기가 로그인하면 자기 데이터를 다시 올림(안내문대로)');
+  // 만료된 상태에서도: 재허용 후 삭제
+  await A.page.evaluate(() => localStorage.removeItem('gagyeboo.token'));
+  await dlg(A);
+  await A.page.locator('.logout-erase input').check();
+  await A.page.getByRole('button', { name: '드라이브 데이터 삭제 후 로그아웃' }).click();
+  await A.page.waitForSelector('.modal[aria-label="드라이브의 데이터를 지웁니다"]');
+  await A.page.getByRole('button', { name: '드라이브 데이터 삭제', exact: true }).click();
+  await A.page.waitForTimeout(800);
+  ok(google.files().length === 0, '로그인이 만료돼 있어도 재허용 후 삭제됨');
+  ok((await A.status()) === 'local' && (await A.total()) !== '0', '이 기기 데이터는 남김');
+  // 이후 다시 로그인하면 이 기기 데이터가 드라이브로 올라간다
+  await A.signIn(); await A.waitStatus('idle');
+  ok(google.files().length === 2, '남겨 둔 기기 데이터는 다시 로그인하면 올라감');
+}
+
 console.log('\n[K] 오프라인에서 입력 → 연결되면 자동 반영');
 google.offline = true;
 await Bm.addEntry('지하철입력', 1500);

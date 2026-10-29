@@ -49,6 +49,7 @@ async function saveState(s: SyncState) {
 export type SyncReason = 'start' | 'resume' | 'change' | 'manual' | 'login' | 'online' | 'timer';
 
 let running = false;
+let erasing = false;
 let again = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -64,7 +65,7 @@ function describe(e: unknown): string {
 
 export async function syncNow(reason: SyncReason = 'manual'): Promise<void> {
   const acc = account.value;
-  if (!acc) return;
+  if (!acc || erasing) return;
   if (running) {
     again = true;
     return;
@@ -189,8 +190,8 @@ export async function reconnect(): Promise<boolean> {
   }
 }
 
-/** 로그아웃. keepLocal이 false면 이 기기의 데이터도 지운다 (드라이브의 데이터는 그대로). */
-export async function signOut(keepLocal: boolean): Promise<void> {
+/** 로그아웃. keepLocal이 false면 이 기기의 데이터도 지운다 (driveErased가 아니면 드라이브의 데이터는 그대로). */
+export async function signOut(keepLocal: boolean, driveErased = false): Promise<void> {
   clearTimeout(timer);
   revokeToken(cachedToken());
   saveAccount(null);
@@ -200,7 +201,66 @@ export async function signOut(keepLocal: boolean): Promise<void> {
   lastSyncAt.value = null;
   await db().meta.delete('syncState');
   if (!keepLocal) await wipeLocalOnly();
-  showToast(keepLocal ? '로그아웃했습니다. 이 기기의 데이터는 그대로 남아 있습니다' : '로그아웃하고 이 기기의 데이터를 지웠습니다');
+  showToast(
+    driveErased
+      ? keepLocal
+        ? '드라이브의 데이터를 지우고 로그아웃했습니다. 이 기기의 데이터는 남아 있습니다'
+        : '드라이브와 이 기기의 데이터를 모두 지우고 로그아웃했습니다'
+      : keepLocal
+        ? '로그아웃했습니다. 이 기기의 데이터는 그대로 남아 있습니다'
+        : '로그아웃하고 이 기기의 데이터를 지웠습니다',
+  );
+}
+
+/**
+ * 드라이브의 데이터를 지우려면 지금 유효한 로그인이 필요하다. 만료되어 있으면 같은 계정으로 다시 허용받는다.
+ * 누른 직후에 불러야 로그인 창이 막히지 않는다.
+ */
+export async function ensureDriveAccess(): Promise<boolean> {
+  const acc = account.value;
+  if (!acc) return false;
+  if (cachedToken()) return true;
+  try {
+    const token = await requestToken({ prompt: '', hint: acc.email });
+    const info = await fetchUserInfo(token);
+    if (info.sub !== acc.sub) {
+      revokeToken(token);
+      showToast(`연결된 계정(${acc.email})이 아닌 ${info.email} 계정입니다. 같은 계정으로 다시 시도해 주세요`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    if (!(e instanceof AuthFlowError && e.code === 'closed')) showToast(authMessage(e));
+    return false;
+  }
+}
+
+/**
+ * 구글 드라이브의 이 앱 데이터를 모두 지우고 로그아웃한다 (되돌릴 수 없음).
+ * 지우는 도중 문제가 생기면 로그아웃하지 않고 오류를 알린다. 다시 시도하면 남은 것만 지운다.
+ * 반환값: 성공 여부
+ */
+export async function eraseDriveAndSignOut(keepLocal: boolean): Promise<boolean> {
+  if (!account.value) return false;
+  erasing = true;
+  clearTimeout(timer);
+  try {
+    while (running) await new Promise((r) => setTimeout(r, 150));
+    const client = new GoogleDriveClient(() => cachedToken());
+    for (const f of await client.list()) await client.remove(f.id);
+    await signOut(keepLocal, true);
+    return true;
+  } catch (e) {
+    if (e instanceof AuthError) forgetToken();
+    showToast(
+      e instanceof AuthError
+        ? '로그인이 만료되어 지우지 못했습니다. 다시 시도해 주세요'
+        : `드라이브 데이터를 지우지 못했습니다: ${describe(e)}`,
+    );
+    return false;
+  } finally {
+    erasing = false;
+  }
 }
 
 /* ───────── 시작 ───────── */

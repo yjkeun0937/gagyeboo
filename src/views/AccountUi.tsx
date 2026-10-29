@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'preact/hooks';
 import { builtInClientId, getClientId, preloadGis, setClientId } from '../sync/auth';
-import { account, clientIdTick, lastSyncAt, reconnect, signIn, signingIn, signOut, syncError, syncNow, syncStatus, type SyncStatus } from '../sync/controller';
+import { account, clientIdTick, ensureDriveAccess, eraseDriveAndSignOut, lastSyncAt, reconnect, signIn, signingIn, signOut, syncError, syncNow, syncStatus, type SyncStatus } from '../sync/controller';
 import { Ui } from '../ui/icons';
 import { accountModal, logoutDialog, openSettings } from '../ui/nav';
-import { Modal } from '../ui/overlay';
+import { askConfirm, Modal } from '../ui/overlay';
 import { viewport } from '../ui/viewport';
 
 /* ───────── 표시용 도우미 ───────── */
@@ -196,10 +196,30 @@ export function AccountModal() {
 
 export function LogoutDialog() {
   const [busy, setBusy] = useState(false);
+  const [eraseDrive, setEraseDrive] = useState(false);
   const close = () => (logoutDialog.value = false);
   const run = async (keepLocal: boolean) => {
     setBusy(true);
     try {
+      if (eraseDrive) {
+        // 로그인 창은 누른 직후에만 띄울 수 있으니 확인 창보다 먼저 권한을 확인한다
+        if (!(await ensureDriveAccess())) return;
+        const ok = await askConfirm({
+          title: '드라이브의 데이터를 지웁니다',
+          message:
+            '구글 드라이브에 저장된 가계부 데이터를 모두 지웁니다. 되돌릴 수 없습니다. ' +
+            (keepLocal ? '이 기기의 데이터는 남습니다. ' : '이 기기의 데이터도 함께 지웁니다. ') +
+            '다른 기기에 로그인되어 있다면 그 기기의 데이터가 다음 동기화 때 드라이브에 다시 올라가므로, 완전히 없애려면 그 기기에서도 같은 방법으로 지우세요.',
+          confirmLabel: '드라이브 데이터 삭제',
+          danger: true,
+        });
+        if (!ok) return;
+        if (await eraseDriveAndSignOut(keepLocal)) {
+          accountModal.value = false;
+          close();
+        }
+        return;
+      }
       await signOut(keepLocal);
       accountModal.value = false;
       close();
@@ -212,25 +232,29 @@ export function LogoutDialog() {
       title="로그아웃"
       onClose={close}
       footer={
-        <>
-          <button type="button" class="btn" onClick={close} disabled={busy}>
-            취소
-          </button>
-          <span class="grow" />
-          <button type="button" class="btn danger" onClick={() => void run(false)} disabled={busy}>
-            이 기기 데이터도 삭제
-          </button>
-          <button type="button" class="btn primary" data-autofocus onClick={() => void run(true)} disabled={busy}>
-            데이터는 남기고 로그아웃
-          </button>
-        </>
+        <button type="button" class="btn" onClick={close} disabled={busy}>
+          취소
+        </button>
       }
     >
-      <p>로그아웃하면 이 기기는 다시 <b>로컬 모드</b>가 되어 다른 기기와 동기화되지 않습니다. 구글 드라이브에 저장된 데이터는 지워지지 않습니다.</p>
-      <p class="hint">
-        「데이터는 남기고 로그아웃」은 이 기기의 내역을 그대로 둡니다. 다른 사람이 쓰는 기기이거나 이 기기에서 지우고 싶다면 「이 기기 데이터도 삭제」를 고르세요
-        (드라이브의 데이터는 그대로이며, 다시 로그인하면 돌아옵니다).
-      </p>
+      <p>로그아웃하면 이 기기는 다시 <b>로컬 모드</b>가 되어 다른 기기와 동기화되지 않습니다.</p>
+      <label class="check logout-erase">
+        <input type="checkbox" checked={eraseDrive} disabled={busy} onChange={(e) => setEraseDrive(e.currentTarget.checked)} />
+        <span>구글 드라이브에 저장된 가계부 데이터도 모두 삭제</span>
+      </label>
+      {eraseDrive ? (
+        <p class="hint warn">드라이브의 데이터를 지우면 되돌릴 수 없습니다. 이 기기에 데이터를 남겨 두면 나중에 다시 로그인해 올릴 수 있습니다.</p>
+      ) : (
+        <p class="hint">체크하지 않으면 드라이브의 데이터는 그대로이며, 다시 로그인하면 돌아옵니다.</p>
+      )}
+      <div class="logout-actions">
+        <button type="button" class="btn primary" data-autofocus onClick={() => void run(true)} disabled={busy}>
+          {eraseDrive ? '드라이브 데이터 삭제 후 로그아웃 (이 기기 데이터는 남김)' : '데이터는 남기고 로그아웃'}
+        </button>
+        <button type="button" class="btn danger" onClick={() => void run(false)} disabled={busy}>
+          {eraseDrive ? '드라이브와 이 기기 데이터 모두 삭제' : '이 기기 데이터도 삭제'}
+        </button>
+      </div>
     </Modal>
   );
 }
