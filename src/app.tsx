@@ -1,5 +1,5 @@
-import { useEffect } from 'preact/hooks';
-import { pendingFixed, ready, settings } from './store/store';
+import { useEffect, useState } from 'preact/hooks';
+import { bootBlocked, bootError, pendingFixed, ready, settings, staleTab } from './store/store';
 import {
   closeSheet,
   fixedPromptShown,
@@ -61,11 +61,9 @@ function AccountChip() {
       class="account-chip"
       aria-label="저장 상태: 이 기기에만 저장 중"
       onClick={(e) =>
-        showPopover(
-          e.currentTarget,
-          '이 기기에만 저장 중',
-          ['구글 로그인으로 다른 기기와 동기화하는 기능은 다음 릴리스에서 제공됩니다.'],
-        )
+        showPopover(e.currentTarget, '이 기기에만 저장 중', [
+          '구글 로그인으로 다른 기기와 동기화하는 기능은 다음 릴리스에서 제공됩니다.',
+        ])
       }
     >
       <Ui name="CloudOff" size={16} />
@@ -125,15 +123,68 @@ function useFixedPrompt() {
   }, [isReady]);
 }
 
+/** 시작 화면: 오래 걸리면 이유와 조치를 알려 준다 */
+function BootScreen() {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), 4000);
+    return () => clearTimeout(t);
+  }, []);
+  const err = bootError.value;
+  const blocked = bootBlocked.value;
+  return (
+    <div class="boot">
+      <div class="boot-box" role="status">
+        <p class="boot-title">{err ? '앱을 시작하지 못했습니다' : '불러오는 중…'}</p>
+        {err ? (
+          <>
+            <p class="boot-msg">저장소를 여는 중 문제가 생겼습니다. 새로고침해도 같다면 아래 내용을 알려 주세요.</p>
+            <code class="boot-code">{err}</code>
+          </>
+        ) : blocked ? (
+          <p class="boot-msg">
+            앱이 새 버전으로 업데이트되는 중인데, <b>이 사이트가 열려 있는 다른 탭·창·홈 화면 앱</b>이 저장소를 붙잡고
+            있어 기다리고 있습니다. 그것들을 모두 닫으면 이 화면이 자동으로 이어집니다. (같은 기기의 브라우저 안에서만
+            해당합니다. 백그라운드로 밀려난 탭도 포함입니다.)
+          </p>
+        ) : slow ? (
+          <p class="boot-msg">
+            평소보다 오래 걸립니다. 새로고침해 보고, 같은 화면이면 이 사이트가 열려 있는 다른 탭·창을 닫아 주세요.
+          </p>
+        ) : null}
+        {err || blocked || slow ? (
+          <button type="button" class="btn" onClick={() => location.reload()}>
+            새로고침
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** 다른 창에서 앱이 업데이트되어 이 창의 저장소 연결이 닫혔을 때 */
+function StaleBanner() {
+  if (!staleTab.value) return null;
+  return (
+    <div class="stale-banner" role="alert">
+      <span>다른 창에서 앱이 새 버전으로 업데이트되었습니다. 이 창은 새로고침해야 계속 쓸 수 있습니다.</span>
+      <button type="button" class="btn small primary" onClick={() => location.reload()}>
+        새로고침
+      </button>
+    </div>
+  );
+}
+
 export function App() {
   useAppearance();
   useShortcuts();
   useFixedPrompt();
-  if (!ready.value) return <div class="boot">불러오는 중…</div>;
+  if (!ready.value) return <BootScreen />;
   const vp = viewport.value;
   const t = tab.value;
   return (
     <div class="app">
+      <StaleBanner />
       <TopPanel />
       <main class="page" id="main">
         <div class="page-inner">

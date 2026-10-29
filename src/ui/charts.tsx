@@ -32,7 +32,14 @@ function tipAt(svg: SVGSVGElement | null, x: number, y: number, tip: Tip) {
   const r = svg.getBoundingClientRect();
   const anchor = {
     getBoundingClientRect: () =>
-      ({ left: r.left + x, width: 0, right: r.left + x, top: r.top + y - 12, bottom: r.top + y - 12, height: 0 }) as DOMRect,
+      ({
+        left: r.left + x,
+        width: 0,
+        right: r.left + x,
+        top: r.top + y - 12,
+        bottom: r.top + y - 12,
+        height: 0,
+      }) as DOMRect,
   };
   showPopover(anchor as unknown as Element, tip.title, tip.lines ?? [], tip.swatch);
 }
@@ -183,7 +190,9 @@ export function LineChart({
           </g>
         ))}
         {area ? <path d={area} fill={color} opacity="0.1" /> : null}
-        {line ? <path d={line} fill="none" stroke={color} stroke-width="2" stroke-linejoin="round" stroke-linecap="round" /> : null}
+        {line ? (
+          <path d={line} fill="none" stroke={color} stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+        ) : null}
         {values.map((v, i) => {
           const show = () => tipAt(svgRef.current, x(i), y(v), tips[i]);
           return (
@@ -225,7 +234,15 @@ export interface DonutSlice {
   color: string;
 }
 
-export function Donut({ slices, center, ariaLabel }: { slices: DonutSlice[]; center: ComponentChildren; ariaLabel: string }) {
+export function Donut({
+  slices,
+  center,
+  ariaLabel,
+}: {
+  slices: DonutSlice[];
+  center: ComponentChildren;
+  ariaLabel: string;
+}) {
   const size = 168;
   const stroke = 26;
   const r = (size - stroke) / 2;
@@ -311,7 +328,10 @@ export function RankedBars({ items, total }: { items: RankItem[]; total: number 
               {it.sub ? <small class="muted">{it.sub}</small> : null}
             </span>
             <span class="rk-bar" aria-hidden="true">
-              <span class="rk-fill" style={{ width: `${Math.max(1.5, (it.value / max) * 100)}%`, background: it.color }} />
+              <span
+                class="rk-fill"
+                style={{ width: `${Math.max(1.5, (it.value / max) * 100)}%`, background: it.color }}
+              />
             </span>
             <span class="rk-value num">{won(it.value)}</span>
             <span class="rk-pct num">{pct}%</span>
@@ -330,5 +350,134 @@ export function RankedBars({ items, total }: { items: RankItem[]; total: number 
         );
       })}
     </ul>
+  );
+}
+
+/* ───────── 누적 영역 (여러 계열을 위로 쌓음) ───────── */
+
+export interface StackSeries {
+  key: string;
+  label: string;
+  color: string;
+  values: number[];
+}
+
+/**
+ * 엑셀의 '누적 영역형'과 같은 차트. 계열은 주어진 순서대로 아래에서 위로 쌓인다.
+ * 색은 계열(분류)에 고정되어 있어, 선택이 바뀌어도 남은 계열의 색은 변하지 않는다.
+ */
+export function StackedAreaChart({
+  series,
+  labels,
+  tipTitle,
+  height = 240,
+  ariaLabel,
+}: {
+  series: StackSeries[];
+  labels: string[];
+  tipTitle: (i: number) => string;
+  height?: number;
+  ariaLabel: string;
+}) {
+  const [ref, w] = useWidth();
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [active, setActive] = useState<number | null>(null);
+  const L = 44;
+  const R = 14;
+  const T = 12;
+  const B = 24;
+  const pw = w - L - R;
+  const ph = height - T - B;
+  const n = labels.length;
+  // 월별 누적 경계: cum[s][i] = s번째 계열 위쪽 경계
+  const cum: number[][] = [];
+  series.forEach((s, si) => {
+    cum.push(s.values.map((v, i) => (si === 0 ? 0 : cum[si - 1][i]) + v));
+  });
+  const totals = labels.map((_, i) => (cum.length ? cum[cum.length - 1][i] : 0));
+  const { max: top, step } = niceScale(Math.max(0, ...totals), 4);
+  const x = (i: number) => L + (n <= 1 ? pw / 2 : (pw * i) / (n - 1));
+  const y = (v: number) => T + ph - (v / top) * ph;
+  const ticks: number[] = [];
+  for (let v = 0; v <= top + 1e-9; v += step) ticks.push(v);
+  const band = n <= 1 ? pw : pw / (n - 1);
+
+  const show = (i: number) => {
+    setActive(i);
+    const lines = series
+      .map((s) => ({ s, v: s.values[i] }))
+      .filter((x) => x.v > 0)
+      .reverse() // 그래프에서 위에 있는 계열이 위에 오도록
+      .map((x) => `${x.s.label} ${won(x.v)}원`);
+    lines.push(`합계 ${won(totals[i])}원`);
+    tipAt(svgRef.current, x(i), y(totals[i]), { title: tipTitle(i), lines });
+  };
+
+  return (
+    <div ref={ref} class="chart">
+      <svg
+        ref={svgRef}
+        width={w}
+        height={height}
+        role="img"
+        aria-label={ariaLabel}
+        onPointerLeave={() => setActive(null)}
+      >
+        {ticks.map((v) => (
+          <g key={v}>
+            <line x1={L} x2={w - R} y1={y(v)} y2={y(v)} stroke="var(--line)" stroke-width="1" />
+            <text x={L - 6} y={y(v) + 4} text-anchor="end" class="chart-tick">
+              {compactWon(v)}
+            </text>
+          </g>
+        ))}
+        {series.map((s, si) => {
+          const upper = cum[si].map((v, i) => `${x(i)},${y(v)}`);
+          const lower = (si === 0 ? labels.map(() => 0) : cum[si - 1]).map((v, i) => `${x(i)},${y(v)}`).reverse();
+          return (
+            <path
+              key={s.key}
+              d={`M${upper.join(' L')} L${lower.join(' L')} Z`}
+              fill={s.color}
+              fill-opacity="0.9"
+              stroke="var(--surface)"
+              stroke-width="1.5"
+              stroke-linejoin="round"
+            />
+          );
+        })}
+        {active !== null ? (
+          <line
+            x1={x(active)}
+            x2={x(active)}
+            y1={T}
+            y2={T + ph}
+            stroke="var(--ink)"
+            stroke-width="1"
+            stroke-dasharray="3 3"
+          />
+        ) : null}
+        {labels.map((l, i) => (
+          <g key={i}>
+            <text x={x(i)} y={height - 6} text-anchor="middle" class="chart-tick">
+              {l}
+            </text>
+            <rect
+              x={x(i) - band / 2}
+              y={T}
+              width={band}
+              height={ph + B - 4}
+              fill="transparent"
+              tabIndex={0}
+              role="button"
+              aria-label={`${tipTitle(i)} 합계 ${won(totals[i])}원`}
+              onPointerEnter={hoverOnly(() => show(i))}
+              onClick={() => show(i)}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), show(i))}
+            />
+          </g>
+        ))}
+      </svg>
+    </div>
   );
 }

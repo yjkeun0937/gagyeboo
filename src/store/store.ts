@@ -24,6 +24,11 @@ import { SCHEMA_VERSION, db, openDb } from './db';
 /* ───────── 상태 ───────── */
 
 export const ready = signal(false);
+/** 시작이 오래 걸리는 이유를 화면에 알리기 위한 상태 */
+export const bootBlocked = signal(false); // 다른 창의 이전 버전이 DB 업데이트를 막고 있음
+export const bootError = signal<string | null>(null);
+/** 이 창이 열려 있는 동안 다른 창이 앱을 더 새 버전으로 올려, 이 창의 DB 연결이 닫힘 */
+export const staleTab = signal(false);
 export const entries = signal<Entry[]>([]);
 export const categories = signal<Category[]>([]);
 export const users = signal<User[]>([]);
@@ -120,7 +125,25 @@ async function loadFromDb() {
 }
 
 export async function initStore(dbName?: string) {
+  try {
+    await initStoreInner(dbName);
+  } catch (err) {
+    // 조용히 멈추지 않고 이유를 보여 준다
+    bootError.value = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    console.error('initStore failed', err);
+  }
+}
+
+async function initStoreInner(dbName?: string) {
   const d = openDb(dbName);
+  // 다른 창(특히 백그라운드로 멈춘 이전 버전 탭)이 연결을 놓지 않으면 업그레이드가 대기한다
+  d.on('blocked', () => {
+    bootBlocked.value = true;
+  });
+  // 다른 창에서 더 새 버전이 열리면 이 창의 연결은 (기본 동작대로) 닫히고, 새로고침을 안내한다
+  d.on('versionchange', () => {
+    staleTab.value = true;
+  });
   const seeded = await d.meta.get('seeded');
   if (!seeded) {
     // 처음 시작할 때만 기본 분류·지불수단을 넣는다 (이미 있는 ID는 건드리지 않음)
@@ -138,6 +161,7 @@ export async function initStore(dbName?: string) {
   await loadFromDb();
   today.value = todayKST();
   viewMonth.value = ymOf(today.value);
+  bootBlocked.value = false;
   ready.value = true;
   // 브라우저가 저장소를 임의로 정리하지 않도록 요청한다 (거부되어도 동작에는 영향 없음)
   try {
