@@ -63,3 +63,7 @@ export const fixedPromptShown = signal(false);
 
 /** '건수만 표시' 설정에서 건수 칩을 눌러 오늘 이후 항목을 임시로 펼친 상태 */
 export const revealFuture = signal(false);
+
+/** 계정·동기화 창, 로그아웃 확인 창 */
+export const accountModal = signal(false);
+export const logoutDialog = signal(false);

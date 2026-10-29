@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'preact/hooks';
 import { bootBlocked, bootError, pendingFixed, ready, settings, staleTab } from './store/store';
 import {
+  accountModal,
   closeSheet,
   fixedPromptShown,
   fixedWindow,
+  logoutDialog,
   openAdd,
   openFixedWindow,
   openSettings,
@@ -13,8 +15,9 @@ import {
   type Tab,
 } from './ui/nav';
 import { viewport } from './ui/viewport';
-import { ConfirmLayer, PopoverLayer, ToastLayer, showPopover } from './ui/overlay';
+import { ConfirmLayer, PopoverLayer, ToastLayer } from './ui/overlay';
 import { Ui } from './ui/icons';
+import { AccountChip, AccountModal, LogoutDialog } from './views/AccountUi';
 import { HistoryView } from './views/HistoryView';
 import { EntrySheet } from './views/EntrySheet';
 import { StatsView } from './views/StatsView';
@@ -51,25 +54,6 @@ function useShortcuts() {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, []);
-}
-
-function AccountChip() {
-  // 구글 로그인은 R3에서 제공된다. 지금은 이 기기에만 저장된다는 상태를 보여준다.
-  return (
-    <button
-      type="button"
-      class="account-chip"
-      aria-label="저장 상태: 이 기기에만 저장 중"
-      onClick={(e) =>
-        showPopover(e.currentTarget, '이 기기에만 저장 중', [
-          '구글 로그인으로 다른 기기와 동기화하는 기능은 다음 릴리스에서 제공됩니다.',
-        ])
-      }
-    >
-      <Ui name="CloudOff" size={16} />
-      <span class="account-text">로컬 저장</span>
-    </button>
-  );
 }
 
 function TopPanel() {
@@ -198,6 +182,8 @@ export function App() {
       ) : null}
       {sheet.value ? <EntrySheet /> : null}
       {fixedWindow.value ? <FixedMonthWindow /> : null}
+      {accountModal.value ? <AccountModal /> : null}
+      {logoutDialog.value ? <LogoutDialog /> : null}
       <PopoverLayer />
       <ToastLayer />
       <ConfirmLayer />

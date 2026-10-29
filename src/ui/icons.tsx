@@ -58,9 +58,9 @@ export function Icon({
 }
 
 /** UI 장식용 아이콘 (예: Ui name="Plus") */
-export function Ui({ name, size = 18 }: { name: keyof typeof L; size?: number }) {
+export function Ui({ name, size = 18, class: cls }: { name: keyof typeof L; size?: number; class?: string }) {
   const C = REGISTRY[name as string];
-  return C ? <C size={size} aria-hidden="true" /> : null;
+  return C ? <C size={size} aria-hidden="true" class={cls} /> : null;
 }
 
 /* ───────── 사용자 ───────── */

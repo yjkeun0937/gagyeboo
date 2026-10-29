@@ -2207,3 +2207,198 @@ select.input {
 .chart-val.is-down {
   fill: var(--danger);
 }
+
+/* ───────── 계정·동기화 (R3) ───────── */
+.account-chip {
+  cursor: pointer;
+}
+.account-chip.is-reconnect {
+  color: var(--amber);
+  background: var(--amber-soft);
+  border-color: var(--amber);
+}
+.account-chip.is-error {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+.account-chip.is-offline {
+  color: var(--ink-3);
+}
+.chip-avatar {
+  position: relative;
+  display: inline-flex;
+}
+.avatar {
+  display: inline-block;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.avatar.is-initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85em;
+  font-weight: 700;
+  color: var(--primary-ink);
+  background: var(--primary);
+}
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ink-3);
+  border: 2px solid var(--surface);
+}
+.chip-avatar .status-dot {
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+}
+.status-dot.is-idle {
+  background: var(--good);
+}
+.status-dot.is-syncing {
+  background: var(--primary);
+}
+.status-dot.is-reconnect {
+  background: var(--amber);
+}
+.status-dot.is-error {
+  background: var(--danger);
+}
+.spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation-duration: 3s;
+  }
+}
+.account-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.account-panel p {
+  margin: 0;
+  line-height: 1.6;
+}
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.account-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sync-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.sync-line .status-dot {
+  margin-top: 5px;
+  border-color: var(--surface-2);
+}
+.sync-line > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.sync-line.is-reconnect {
+  background: var(--amber-soft);
+  border-color: var(--amber);
+}
+.sync-line.is-error {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+.notice {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: var(--amber-soft);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+}
+.notice p {
+  margin: 0 0 8px;
+}
+.link-btn {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0;
+  color: var(--primary);
+  background: none;
+  border: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.guide {
+  margin-top: 14px;
+}
+.guide > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: var(--primary);
+  font-weight: 600;
+}
+.guide ol {
+  margin: 4px 0 10px;
+  padding-left: 1.3em;
+  line-height: 1.7;
+}
+.guide li {
+  margin-bottom: 8px;
+}
+.guide code {
+  padding: 1px 5px;
+  font-size: 0.86em;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+}
+.guide code.copy {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 6px 0 2px;
+  user-select: all;
+}
+.plain-list {
+  margin: 0;
+  padding-left: 1.2em;
+  line-height: 1.7;
+}
+.guide ol {
+  list-style: decimal;
+}
+.plain-list {
+  list-style: disc;
+}
+.account-panel > .btn {
+  align-self: flex-start;
+}
+.btn-row.is-center {
+  align-items: center;
+}

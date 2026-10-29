@@ -19,6 +19,7 @@ import { settingsPage, type SettingsPage } from '../ui/nav';
 import { askConfirm } from '../ui/overlay';
 import { viewport } from '../ui/viewport';
 import { FixedPage } from './FixedPage';
+import { AccountPage } from './AccountUi';
 import { ListsManager } from './ListsManager';
 
 const MENU: { id: SettingsPage; label: string; desc: string; icon: 'CalendarDays' | 'ListChecks' | 'Palette' | 'Cloud' | 'Database' | 'Info' | 'Target' }[] = [
@@ -49,15 +50,6 @@ function Segmented<T extends string | number>({
           {o.label}
         </button>
       ))}
-    </div>
-  );
-}
-
-function Placeholder({ title, children }: { title: string; children: preact.ComponentChildren }) {
-  return (
-    <div class="placeholder">
-      <h3>{title}</h3>
-      {children}
     </div>
   );
 }
@@ -346,13 +338,13 @@ function AboutPage() {
         <h3>가계부</h3>
         <dl class="kv">
           <dt>릴리스</dt>
-          <dd>R1 (사용 내역 · 지출 입력 · 목록 관리)</dd>
+          <dd>R3 (구글 로그인 · 기기 간 동기화)</dd>
           <dt>저장 위치</dt>
-          <dd>이 기기의 브라우저 (IndexedDB). 서버로 전송되지 않습니다.</dd>
+          <dd>이 기기의 브라우저(IndexedDB). 구글 로그인을 하면 내 구글 드라이브의 앱 전용 폴더에도 저장됩니다.</dd>
           <dt>데이터 형식</dt>
           <dd>v{SCHEMA_VERSION}</dd>
         </dl>
-        <p class="hint">고정지출, 통계, 구글 로그인 동기화, 엑셀 가져오기·내보내기는 다음 릴리스에서 제공됩니다.</p>
+        <p class="hint">엑셀 가져오기·내보내기는 다음 릴리스에서 제공됩니다.</p>
       </section>
     </div>
   );
@@ -369,11 +361,7 @@ function Page({ id }: { id: SettingsPage }) {
     case 'display':
       return <DisplayPage />;
     case 'account':
-      return (
-        <Placeholder title="구글 로그인·동기화는 다음 릴리스(R3)에서 제공됩니다">
-          <p>지금은 이 기기에만 저장됩니다. 로그인하면 같은 구글 계정으로 다른 기기와 데이터를 맞출 수 있게 됩니다. 그 전에는 「데이터 관리」의 백업 기능을 이용하세요.</p>
-        </Placeholder>
-      );
+      return <AccountPage />;
     case 'data':
       return <DataPage />;
     case 'about':

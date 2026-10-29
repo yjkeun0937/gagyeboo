@@ -6,11 +6,12 @@ import './styles/tokens.css';
 import './styles/base.css';
 import './styles/app.css';
 import { App } from './app';
-import { initStore, refreshToday } from './store/store';
+import { initStore, ready, refreshToday } from './store/store';
+import { initSync } from './sync/controller';
 
 render(<App />, document.getElementById('app')!);
 
-void initStore();
+void initStore().then(() => (ready.value ? initSync() : undefined));
 
 // 날짜가 바뀌거나 앱이 다시 보일 때 '오늘'을 갱신한다 (보류·예정 판정에 쓰임)
 document.addEventListener('visibilitychange', () => {

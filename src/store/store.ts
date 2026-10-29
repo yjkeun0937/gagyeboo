@@ -173,6 +173,14 @@ async function initStoreInner(dbName?: string) {
 
 /* ───────── 저장 ───────── */
 
+/** 로컬 데이터가 바뀔 때 알릴 곳 (동기화가 변경 후 몇 초 뒤에 묶어서 올리려고 등록한다) */
+let onLocalChange: (() => void) | null = null;
+export function setChangeListener(fn: (() => void) | null) {
+  onLocalChange = fn;
+}
+/** 동기화가 받아 온 내용을 화면에 다시 반영한다 */
+export const reloadFromDb = () => loadFromDb();
+
 let lastStamp = 0;
 /** 같은 날짜 안의 입력 순서를 보존하기 위해 항상 증가하는 값을 만든다. */
 export function nextStamp(): number {
@@ -186,6 +194,7 @@ export async function save<T extends TableName>(table: T, item: Rows[T]): Promis
   const s = sigs[table] as Signal<Rows[T][]>;
   const rest = s.value.filter((x) => x.id !== next.id);
   s.value = next.deleted ? rest : [...rest, next];
+  onLocalChange?.();
   return next;
 }
 
@@ -393,6 +402,11 @@ export async function updateSettings(patch: Partial<AppSettings>) {
   const next = { ...settings.value, ...patch };
   settings.value = next;
   await db().meta.put({ key: 'settings', value: next });
+  // 월간 목표·미래 내역 표시는 기기 간에 공유되므로 바꾼 시각을 남긴다 (화면 취향은 기기마다 따로)
+  if ('monthlyGoal' in patch || 'futureDisplay' in patch) {
+    await db().meta.put({ key: 'settingsAt', value: Date.now() });
+    onLocalChange?.();
+  }
 }
 
 /* ───────── 백업·복원 ───────── */
@@ -454,59 +468,93 @@ export function validateBackup(data: unknown): data is BackupFile {
   );
 }
 
-export async function importAll(data: BackupFile): Promise<void> {
+const ALL_TABLES: TableName[] = ['entries', 'categories', 'users', 'payMethods', 'payDetails', 'fixedItems', 'fixedRuns'];
+
+/**
+ * 모든 표를 `rows`로 바꾼다. 기기 간 동기화에서 '지금 이 상태가 최신'으로 인정받도록,
+ * 새 내용은 지금 시각으로 다시 찍고 사라지는 기록은 삭제 표시로 남긴다 (그냥 지우면 드라이브에서 되살아난다).
+ */
+async function replaceAllRows(rows: { [K in TableName]?: Base[] }): Promise<void> {
   const d = db();
-  await d.transaction(
-    'rw',
-    [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns, d.meta],
-    async () => {
-      await Promise.all([
-        d.entries.clear(),
-        d.categories.clear(),
-        d.users.clear(),
-        d.payMethods.clear(),
-        d.payDetails.clear(),
-        d.fixedItems.clear(),
-        d.fixedRuns.clear(),
-      ]);
-      await d.fixedItems.bulkPut(data.fixedItems ?? []);
-      await d.fixedRuns.bulkPut(data.fixedRuns ?? []);
-      await d.entries.bulkPut(data.entries);
-      await d.categories.bulkPut(data.categories);
-      await d.users.bulkPut(data.users);
-      await d.payMethods.bulkPut(data.payMethods);
-      await d.payDetails.bulkPut(data.payDetails);
-      await d.meta.put({ key: 'seeded', value: true });
-      if (data.settings) await d.meta.put({ key: 'settings', value: data.settings });
-    },
-  );
-  await loadFromDb();
+  const now = Date.now();
+  await d.transaction('rw', [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns], async () => {
+    for (const t of ALL_TABLES) {
+      const table = d[t] as unknown as {
+        toArray(): Promise<Base[]>;
+        clear(): Promise<void>;
+        bulkPut(r: Base[]): Promise<unknown>;
+      };
+      const incoming = rows[t] ?? [];
+      const keep = new Set(incoming.map((r) => r.id));
+      const gone = (await table.toArray())
+        .filter((r) => !keep.has(r.id) && !r.deleted)
+        .map((r) => ({ ...r, deleted: true, updatedAt: now }));
+      await table.bulkPut([...incoming.map((r) => ({ ...r, updatedAt: now })), ...gone]);
+    }
+  });
 }
 
-/** 모든 내역과 목록을 지우고 기본 분류·지불수단으로 되돌린다. */
+export async function importAll(data: BackupFile): Promise<void> {
+  const d = db();
+  await replaceAllRows({
+    entries: data.entries,
+    categories: data.categories,
+    users: data.users,
+    payMethods: data.payMethods,
+    payDetails: data.payDetails,
+    fixedItems: data.fixedItems ?? [],
+    fixedRuns: data.fixedRuns ?? [],
+  });
+  await d.meta.put({ key: 'seeded', value: true });
+  if (data.settings) {
+    await d.meta.put({ key: 'settings', value: data.settings });
+    await d.meta.put({ key: 'settingsAt', value: Date.now() });
+  }
+  await loadFromDb();
+  onLocalChange?.();
+}
+
+/** 모든 내역과 목록을 지우고 기본 분류·지불수단으로 되돌린다. (로그인 중이면 다른 기기에도 전파된다) */
 export async function resetAll(): Promise<void> {
   const d = db();
-  await d.transaction(
-    'rw',
-    [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns, d.meta],
-    async () => {
-      await Promise.all([
-        d.entries.clear(),
-        d.categories.clear(),
-        d.users.clear(),
-        d.payMethods.clear(),
-        d.payDetails.clear(),
-        d.fixedItems.clear(),
-        d.fixedRuns.clear(),
-        d.meta.clear(),
-      ]);
-      await d.meta.put({ key: 'firstUseYm', value: ymOf(todayKST()) });
-      await d.categories.bulkPut(seedCategories());
-      await d.payMethods.bulkPut(seedPayMethods());
-      await d.meta.put({ key: 'seeded', value: true });
-    },
-  );
+  const now = Date.now();
+  await replaceAllRows({
+    categories: seedCategories().map((c) => ({ ...c, updatedAt: now })),
+    payMethods: seedPayMethods().map((p) => ({ ...p, updatedAt: now })),
+  });
+  await d.meta.put({ key: 'firstUseYm', value: ymOf(todayKST()) });
+  await d.meta.put({ key: 'seeded', value: true });
+  await d.meta.delete('settings');
+  await d.meta.put({ key: 'settingsAt', value: now });
   await loadFromDb();
+  settings.value = { ...DEFAULT_SETTINGS };
+  onLocalChange?.();
+}
+
+/**
+ * 이 기기의 데이터만 지우고 처음 상태로 되돌린다. 드라이브에는 아무 것도 보내지 않는다.
+ * (로그아웃하면서 '이 기기에서 삭제'를 고른 경우)
+ */
+export async function wipeLocalOnly(): Promise<void> {
+  const d = db();
+  await d.transaction('rw', [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns, d.meta], async () => {
+    await Promise.all([
+      d.entries.clear(),
+      d.categories.clear(),
+      d.users.clear(),
+      d.payMethods.clear(),
+      d.payDetails.clear(),
+      d.fixedItems.clear(),
+      d.fixedRuns.clear(),
+      d.meta.clear(),
+    ]);
+    await d.meta.put({ key: 'firstUseYm', value: ymOf(todayKST()) });
+    await d.categories.bulkPut(seedCategories());
+    await d.payMethods.bulkPut(seedPayMethods());
+    await d.meta.put({ key: 'seeded', value: true });
+  });
+  await loadFromDb();
+  settings.value = { ...DEFAULT_SETTINGS };
 }
 
 /* ───────── 알림(토스트) ───────── */
