@@ -383,8 +383,8 @@ export function StackedAreaChart({
   const svgRef = useRef<SVGSVGElement>(null);
   const [active, setActive] = useState<number | null>(null);
   const L = 44;
-  const R = 14;
-  const T = 12;
+  const R = 30;
+  const T = 24;
   const B = 24;
   const pw = w - L - R;
   const ph = height - T - B;
@@ -401,6 +401,25 @@ export function StackedAreaChart({
   const ticks: number[] = [];
   for (let v = 0; v <= top + 1e-9; v += step) ticks.push(v);
   const band = n <= 1 ? pw : pw / (n - 1);
+  // 월 간격이 넓으면 정확한 금액, 좁으면 '만' 단위로 줄여 표시
+  const fmtTotal = (v: number) => (band >= 64 ? won(v) : compactWon(v));
+  // 총액 라벨은 큰 값부터 놓되, 이미 놓은 라벨과 가로로 겹치면 생략한다 (생략된 달은 툴팁으로 확인)
+  const shownTotal = new Set<number>();
+  const placed: [number, number][] = [];
+  labels
+    .map((_, i) => i)
+    .filter((i) => totals[i] > 0)
+    .sort((p, q) => totals[q] - totals[p])
+    .forEach((i) => {
+      const half = (fmtTotal(totals[i]).length * 6.4) / 2 + 3;
+      const lo = x(i) - half;
+      const hi = x(i) + half;
+      if (placed.every(([a, b]) => hi < a || lo > b)) {
+        placed.push([lo, hi]);
+        shownTotal.add(i);
+      }
+    });
+  const axisEvery = band < 40 ? 2 : 1;
 
   const show = (i: number) => {
     setActive(i);
@@ -459,9 +478,16 @@ export function StackedAreaChart({
         ) : null}
         {labels.map((l, i) => (
           <g key={i}>
-            <text x={x(i)} y={height - 6} text-anchor="middle" class="chart-tick">
-              {l}
-            </text>
+            {shownTotal.has(i) ? (
+              <text x={x(i)} y={y(totals[i]) - 7} text-anchor="middle" class="chart-val">
+                {fmtTotal(totals[i])}
+              </text>
+            ) : null}
+            {i % axisEvery === 0 ? (
+              <text x={x(i)} y={height - 6} text-anchor="middle" class="chart-tick">
+                {l}
+              </text>
+            ) : null}
             <rect
               x={x(i) - band / 2}
               y={T}

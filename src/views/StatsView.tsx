@@ -579,7 +579,7 @@ function YearlyStats() {
           </Card>
           <Card
             title="분류 × 월 지출표"
-            note="칸 뒤의 막대는 그 분류의 가장 많이 쓴 달을 100%로 한 크기입니다. 칸을 누르면 그 달·분류의 사용 내역으로 이동합니다."
+            note="칸 뒤의 막대는 아래에서 위로 자라며, 그 분류에서 가장 많이 쓴 달이 칸 높이 전체입니다. 칸을 누르면 그 달·분류의 사용 내역으로 이동합니다."
           >
             <div class="matrix-wrap">
               <table class="matrix">
@@ -608,7 +608,7 @@ function YearlyStats() {
                           class={`num ${v > 0 ? 'has-bar' : ''}`}
                           style={
                             v > 0
-                              ? { '--w': `${Math.max(3, (v / rowMax(r.months)) * 100)}%`, '--c': catColor(r.category) }
+                              ? { '--h': `${Math.max(3, (v / rowMax(r.months)) * 100)}%`, '--c': catColor(r.category) }
                               : undefined
                           }
                         >
@@ -643,7 +643,7 @@ function YearlyStats() {
                         class={`num strong ${v > 0 ? 'has-bar' : ''}`}
                         style={
                           v > 0
-                            ? { '--w': `${Math.max(3, (v / rowMax(y.monthTotals)) * 100)}%`, '--c': 'var(--primary)' }
+                            ? { '--h': `${Math.max(3, (v / rowMax(y.monthTotals)) * 100)}%`, '--c': 'var(--primary)' }
                             : undefined
                         }
                       >

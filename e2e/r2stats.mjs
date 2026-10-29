@@ -48,7 +48,7 @@ for (const [name, vp] of [['desktop', { width: 1366, height: 900 }], ['mobile', 
   ok(bars > 10, `지출표 셀 막대 ${bars}개`);
   const info = await page.evaluate(() => {
     const rows = [...document.querySelectorAll('.matrix tbody tr')];
-    return rows.map((r) => [...r.querySelectorAll('td.has-bar')].map((td) => parseFloat(td.style.getPropertyValue('--w'))).sort((a, b) => b - a)[0]);
+    return rows.map((r) => [...r.querySelectorAll('td.has-bar')].map((td) => parseFloat(td.style.getPropertyValue('--h'))).sort((a, b) => b - a)[0]);
   });
   ok(info.every((m) => Math.abs(m - 100) < 0.01), '각 분류 행의 최대 셀은 막대 100%');
   await page.locator('.matrix-wrap').scrollIntoViewIfNeeded();

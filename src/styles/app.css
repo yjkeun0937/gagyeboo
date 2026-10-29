@@ -2162,10 +2162,11 @@ select.input {
 
 /* 지출표 셀 배경 막대 (엑셀 스파크라인처럼, 행마다 최대값 기준) */
 .matrix td.has-bar {
+  /* 아래에서 위로 자라는 막대: 칸 높이 전체가 100%, 이웃 달과 붙어서 이어져 보인다 */
   background-image: linear-gradient(
-    to right,
-    color-mix(in srgb, var(--c) 30%, transparent) var(--w),
-    transparent var(--w)
+    to top,
+    color-mix(in srgb, var(--c) 34%, transparent) var(--h),
+    transparent var(--h)
   );
   background-repeat: no-repeat;
 }
@@ -2182,4 +2183,12 @@ select.input {
 .chart-sum {
   margin: 12px 0 0;
   text-align: right;
+}
+
+.chart-val {
+  font-size: 11px;
+  font-weight: 600;
+  fill: var(--ink-2);
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
 }
