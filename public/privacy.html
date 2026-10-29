@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>개인정보처리방침 - 가계부</title>
+<style>
+:root{color-scheme:light dark;--bg:#F4F8FA;--fg:#14212B;--mute:#51606C;--line:#D5DEE4;--acc:#2438A8}
+@media(prefers-color-scheme:dark){:root{--bg:#121A24;--fg:#E6EDF3;--mute:#9AA9B6;--line:#2A3846;--acc:#8FA2FF}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 system-ui,-apple-system,"Noto Sans KR","Malgun Gothic",sans-serif}
+main{max-width:720px;margin:0 auto;padding:32px 20px 64px}
+h1{font-size:1.6rem;margin:0 0 4px}h2{font-size:1.15rem;margin:32px 0 8px;padding-top:16px;border-top:1px solid var(--line)}
+p,li{margin:6px 0}.mute{color:var(--mute);font-size:.9rem}a{color:var(--acc)}
+nav{display:flex;gap:16px;margin:16px 0 0;flex-wrap:wrap}
+</style>
+</head>
+<body><main>
+<h1>개인정보처리방침</h1>
+<p class="mute">가계부 (https://yjkeun0937.github.io/gagyeboo/) · 시행일 2026-10-29</p>
+<nav><a href="about.html">앱 소개</a><a href="./">앱 열기</a></nav>
+
+<h2>요약</h2>
+<p>가계부는 별도의 서버를 운영하지 않습니다. 입력한 가계 데이터는 사용자의 기기와, 사용자가 로그인한 경우 사용자 본인의 구글 드라이브에만 저장되며, 개발자를 포함한 제3자에게 전송되거나 공유되지 않습니다.</p>
+
+<h2>1. 앱이 접근하는 구글 사용자 데이터</h2>
+<p>구글 계정으로 로그인하면 다음 권한을 요청합니다.</p>
+<ul>
+<li><strong>이메일 주소·프로필(이름, 사진)</strong> (openid, email, profile): 어느 계정으로 로그인했는지 화면에 표시하고, 재연결 때 같은 계정인지 확인하는 용도로만 사용합니다.</li>
+<li><strong>구글 드라이브 앱 전용 데이터 폴더</strong> (drive.appdata): 이 앱만 읽고 쓸 수 있는 숨김 폴더입니다. 가계부 데이터 파일(meta.json, entries-연도.json)을 저장하고 불러오는 데에만 사용합니다. 드라이브의 다른 파일은 보거나 변경할 수 없습니다.</li>
+</ul>
+
+<h2>2. 데이터가 저장되는 곳</h2>
+<ul>
+<li><strong>사용자의 기기:</strong> 지출 내역·분류·설정은 브라우저의 IndexedDB에 저장됩니다. 로그인 상태(접근 토큰, 계정 이메일·이름)와 화면 설정은 브라우저의 localStorage에 저장됩니다. 접근 토큰은 약 1시간 뒤 만료됩니다.</li>
+<li><strong>사용자의 구글 드라이브:</strong> 로그인한 경우에 한해 앱 전용 숨김 폴더에 가계부 데이터가 저장됩니다.</li>
+<li>그 밖의 서버, 데이터베이스, 분석 도구, 광고 도구는 사용하지 않습니다.</li>
+</ul>
+
+<h2>3. 이용 목적과 공유</h2>
+<p>구글 사용자 데이터는 위 1항의 기능을 제공하는 목적으로만 사용합니다. 판매하거나 광고에 사용하지 않고, 제3자에게 제공하지 않으며, 사람이 열람하지 않습니다.
+이 앱의 구글 API 데이터 사용은 <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API 서비스 사용자 데이터 정책</a>(제한된 사용 요구사항 포함)을 따릅니다.</p>
+
+<h2>4. 보관 기간과 삭제</h2>
+<ul>
+<li>앱에서 로그아웃하면 「이 기기 데이터도 삭제」를 선택해 이 기기의 데이터를 지울 수 있습니다.</li>
+<li>구글 계정의 <a href="https://myaccount.google.com/permissions">서드 파티 앱 및 서비스 연결 관리</a>에서 이 앱의 접근 권한을 언제든 취소할 수 있습니다.</li>
+<li>드라이브에 저장된 앱 데이터는 구글 드라이브 설정의 「앱 관리」에서 이 앱의 숨김 데이터를 삭제하여 지울 수 있습니다.</li>
+<li>브라우저의 사이트 데이터를 삭제하면 이 기기에 저장된 데이터도 지워집니다.</li>
+</ul>
+
+<h2>5. 문의</h2>
+<p>문의나 요청은 <a href="https://github.com/yjkeun0937/gagyeboo/issues">GitHub 저장소의 Issues</a>로 남겨 주세요.</p>
+
+<h2>6. 변경</h2>
+<p>방침이 바뀌면 이 페이지를 갱신하고 시행일을 고칩니다.</p>
+</main></body></html>

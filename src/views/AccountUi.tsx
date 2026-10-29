@@ -322,6 +322,11 @@ export function AccountPage() {
           <li>월간 목표와 오늘 이후 내역 표시 방식은 기기 간에 공유하고, 테마·글자 크기·정렬 방식은 기기마다 따로 둡니다.</li>
           <li>구글 로그인은 약 1시간 뒤 만료됩니다. 만료되면 상단의 「재연결 필요」를 한 번 누르면 이어서 동기화합니다.</li>
         </ul>
+        <p class="hint">
+          <a href={`${import.meta.env.BASE_URL}privacy.html`} target="_blank" rel="noopener">
+            개인정보처리방침
+          </a>
+        </p>
       </section>
     </div>
   );
