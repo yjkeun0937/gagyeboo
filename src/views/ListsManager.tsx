@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import type { Category, ID, PayDetail, PayMethod, TableName, User } from '../lib/types';
+import type { Category, ID, ListTableName, PayDetail, PayMethod, User } from '../lib/types';
 import { uid } from '../lib/format';
 import {
   canDelete,
@@ -34,7 +34,7 @@ import {
 import { listsTab, type ListsTab } from '../ui/nav';
 import { askConfirm, Modal } from '../ui/overlay';
 
-type ListTable = Exclude<TableName, 'entries'>;
+type ListTable = ListTableName;
 
 /* ───────── 공통 입력 요소 ───────── */
 

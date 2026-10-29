@@ -1,5 +1,13 @@
 import Dexie, { type Table } from 'dexie';
-import type { Category, Entry, PayDetail, PayMethod, User } from '../lib/types';
+import type {
+  Category,
+  Entry,
+  FixedItem,
+  FixedMonthRun,
+  PayDetail,
+  PayMethod,
+  User,
+} from '../lib/types';
 
 export interface MetaRow {
   key: string;
@@ -15,6 +23,8 @@ export class LedgerDB extends Dexie {
   users!: Table<User, string>;
   payMethods!: Table<PayMethod, string>;
   payDetails!: Table<PayDetail, string>;
+  fixedItems!: Table<FixedItem, string>;
+  fixedRuns!: Table<FixedMonthRun, string>;
   meta!: Table<MetaRow, string>;
 
   constructor(name: string) {
@@ -27,11 +37,22 @@ export class LedgerDB extends Dexie {
       payDetails: 'id',
       meta: 'key',
     });
+    // v2 (R2): 고정지출 항목과 월별 처리 상태 추가. 기존 데이터는 그대로 둔다.
+    this.version(2).stores({
+      entries: 'id, date, updatedAt',
+      categories: 'id',
+      users: 'id',
+      payMethods: 'id',
+      payDetails: 'id',
+      fixedItems: 'id',
+      fixedRuns: 'id',
+      meta: 'key',
+    });
   }
 }
 
 /** 저장 형식 버전. 백업 파일에도 기록된다. */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 let current: LedgerDB | null = null;
 

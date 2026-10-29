@@ -125,11 +125,13 @@ export function Modal({
   onClose,
   children,
   footer,
+  wide,
 }: {
   title: string;
   onClose: () => void;
   children: ComponentChildren;
   footer?: ComponentChildren;
+  wide?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEscape(onClose);
@@ -145,7 +147,7 @@ export function Modal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div class="modal" role="dialog" aria-modal="true" aria-label={title} ref={ref}>
+      <div class={`modal ${wide ? 'is-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} ref={ref}>
         <header class="modal-head">
           <h2>{title}</h2>
           <button type="button" class="icon-btn" aria-label="닫기" onClick={onClose}>

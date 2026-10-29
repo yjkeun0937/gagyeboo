@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect } from 'preact/hooks';
 import {
   entryStatus,
   filterEntries,
+  goalWarning,
   groupByDate,
   isCounted,
   isFilterActive,
@@ -9,10 +10,10 @@ import {
   type DateGroup,
   type MonthSummary,
 } from '../lib/calc';
-import { addMonths, formatMD, formatYm, monthNum, weekdayIndex, weekdayKo, ymOf, yearNum } from '../lib/dates';
+import { addMonths, formatMD, formatYm, monthNum, weekdayIndex, weekdayKo, ymOf } from '../lib/dates';
 import { won } from '../lib/format';
 import { EMPTY_FILTER, type Entry } from '../lib/types';
-import { clearSample, hasSample, loadSample } from '../lib/sample';
+import { loadSample } from '../lib/sample';
 import {
   categoriesById,
   categoriesSorted,
@@ -22,9 +23,12 @@ import {
   payDetailsById,
   payMethodsById,
   payMethodsSorted,
+  pendingFixed,
   personsSorted,
+  settings,
   showToast,
   today,
+  updateSettings,
   users,
   usersById,
   viewMonth,
@@ -35,30 +39,42 @@ import {
   filter,
   openAdd,
   openEdit,
+  openFixedWindow,
   openSettings,
+  revealFuture,
   searchAllPeriod,
   searchOpen,
   sheet,
   tab,
 } from '../ui/nav';
+import { MonthNav } from '../ui/monthnav';
+import { showPopover } from '../ui/overlay';
 import { Empty, Pills } from '../ui/parts';
 import { iconMode, viewport } from '../ui/viewport';
 
 /* ───────── 월 이동 ───────── */
 
+/** 해당 날짜(없으면 그 이전 가장 가까운 날, 그것도 없으면 이후 가장 가까운 날) 그룹이 화면 맨 위에 오게 한다. 정렬 방향과 무관 */
 function scrollToDate(date: string) {
-  requestAnimationFrame(() => {
-    const groups = [...document.querySelectorAll<HTMLElement>('[data-date]')];
-    if (!groups.length) return;
-    let target = groups[groups.length - 1];
-    for (const g of groups) {
-      if ((g.dataset.date ?? '') <= date) target = g;
-      else break;
-    }
-    // 오늘보다 앞선 날짜가 하나도 없으면 첫 그룹
-    if (groups[0].dataset.date! > date) target = groups[0];
-    target.scrollIntoView({ block: 'start' });
-  });
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      const els = [...document.querySelectorAll<HTMLElement>('[data-date]')];
+      if (!els.length) return;
+      const dateOf = (el: HTMLElement) => el.dataset.date ?? '';
+      const before = els.filter((el) => dateOf(el) <= date);
+      const pool = before.length ? before : els;
+      const pick = pool.reduce((best, el) =>
+        before.length
+          ? dateOf(el) > dateOf(best)
+            ? el
+            : best
+          : dateOf(el) < dateOf(best)
+            ? el
+            : best,
+      );
+      pick.scrollIntoView({ block: 'start' });
+    }),
+  );
 }
 
 function goToday() {
@@ -66,85 +82,12 @@ function goToday() {
   scrollToDate(today.value);
 }
 
-function MonthPicker({ onClose }: { onClose: () => void }) {
-  const [year, setYear] = useState(yearNum(viewMonth.value));
-  const withData = new Set(entries.value.map((e) => ymOf(e.date)));
-  useEffect(() => {
-    const onDown = (e: PointerEvent) => {
-      if (!(e.target as Element).closest('.month-picker, .month-title')) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    document.addEventListener('pointerdown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, []);
-  return (
-    <div class="month-picker" role="dialog" aria-label="연·월 선택">
-      <div class="mp-year">
-        <button type="button" class="icon-btn" aria-label="이전 해" onClick={() => setYear(year - 1)}>
-          <Ui name="ChevronLeft" size={18} />
-        </button>
-        <strong>{year}년</strong>
-        <button type="button" class="icon-btn" aria-label="다음 해" onClick={() => setYear(year + 1)}>
-          <Ui name="ChevronRight" size={18} />
-        </button>
-      </div>
-      <div class="mp-grid">
-        {Array.from({ length: 12 }, (_, i) => {
-          const ym = `${year}-${String(i + 1).padStart(2, '0')}`;
-          return (
-            <button
-              key={ym}
-              type="button"
-              class={`mp-month ${ym === viewMonth.value ? 'is-current' : ''} ${withData.has(ym) ? 'has-data' : ''}`}
-              onClick={() => {
-                viewMonth.value = ym;
-                onClose();
-              }}
-            >
-              {i + 1}월
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function MonthBar() {
   const ym = viewMonth.value;
-  const [picker, setPicker] = useState(false);
-  const go = (n: number) => (viewMonth.value = addMonths(viewMonth.value, n));
   return (
     <div class="monthbar">
-      <div class="monthnav">
-        <button type="button" class="icon-btn" aria-label="전년" onClick={() => go(-12)}>
-          <Ui name="ChevronsLeft" />
-        </button>
-        <button type="button" class="icon-btn" aria-label="전월" onClick={() => go(-1)}>
-          <Ui name="ChevronLeft" />
-        </button>
-        <button
-          type="button"
-          class="month-title"
-          aria-haspopup="dialog"
-          aria-expanded={picker}
-          onClick={() => setPicker(!picker)}
-        >
-          {formatYm(ym)}
-        </button>
-        <button type="button" class="icon-btn" aria-label="다음 달" onClick={() => go(1)}>
-          <Ui name="ChevronRight" />
-        </button>
-        <button type="button" class="icon-btn" aria-label="다음 해" onClick={() => go(12)}>
-          <Ui name="ChevronsRight" />
-        </button>
-        {picker ? <MonthPicker onClose={() => setPicker(false)} /> : null}
-      </div>
-      <button type="button" class="btn small" onClick={goToday} disabled={ym === ymOf(today.value) && false}>
+      <MonthNav />
+      <button type="button" class="btn small" onClick={goToday} aria-label="오늘로 이동" data-current={ym === ymOf(today.value)}>
         오늘
       </button>
       <span class="grow" />
@@ -163,7 +106,11 @@ function MonthBar() {
 
 /* ───────── 월 요약 ───────── */
 
-function Summary({ s }: { s: MonthSummary }) {
+function Summary({ s, ym }: { s: MonthSummary; ym: string }) {
+  const goal = settings.value.monthlyGoal;
+  const fd = settings.value.futureDisplay;
+  const warn = goalWarning(s, ym, today.value, goal);
+  const reveal = revealFuture.value;
   return (
     <section class="summary" aria-label="월 요약">
       <div class="stat stat-total">
@@ -179,9 +126,21 @@ function Summary({ s }: { s: MonthSummary }) {
       </div>
       <div class="stat">
         <span class="stat-label">예상 월지출</span>
-        <strong class="stat-value num">{won(s.projected)}</strong>
+        <strong class="stat-value num">
+          {won(s.projected)}
+          {warn ? (
+            <button
+              type="button"
+              class="goal-badge"
+              aria-label="예상 월지출이 목표를 넘습니다. 자세히 보기"
+              onClick={(e) => showPopover(e.currentTarget, warn.title, warn.lines, '#B3261E')}
+            >
+              <span aria-hidden="true">!</span>
+            </button>
+          ) : null}
+        </strong>
       </div>
-      {s.pendingCount > 0 || s.scheduledCount > 0 ? (
+      {fd === 'all' && (s.pendingCount > 0 || s.scheduledCount > 0) ? (
         <p class="summary-note">
           {s.pendingCount > 0 ? (
             <span>
@@ -195,7 +154,52 @@ function Summary({ s }: { s: MonthSummary }) {
           ) : null}
         </p>
       ) : null}
+      {fd === 'count' && (s.pendingCount > 0 || s.scheduledCount > 0) ? (
+        <p class="summary-note">
+          {s.pendingCount > 0 ? (
+            <button type="button" class="count-chip" aria-pressed={reveal} onClick={() => (revealFuture.value = !reveal)}>
+              <span class="pill pill-pending">보류</span> {s.pendingCount}건
+            </button>
+          ) : null}
+          {s.scheduledCount > 0 ? (
+            <button type="button" class="count-chip" aria-pressed={reveal} onClick={() => (revealFuture.value = !reveal)}>
+              <span class="pill pill-scheduled">예정</span> {s.scheduledCount}건
+            </button>
+          ) : null}
+          <small class="muted">{reveal ? '눌러서 다시 숨기기' : '눌러서 목록에 보기'}</small>
+        </p>
+      ) : null}
     </section>
+  );
+}
+
+/* ───────── 알림 칩 (해당할 때만) ───────── */
+
+function AlertChips({ estimateCount }: { estimateCount: number }) {
+  const pending = pendingFixed.value;
+  const f = filter.value;
+  if (!pending.length && !estimateCount && !f.estimateOnly) return null;
+  const thisMonth = ymOf(today.value);
+  return (
+    <div class="alert-chips">
+      {pending.length ? (
+        <button type="button" class="alert-chip is-warn" onClick={() => openFixedWindow()}>
+          <Ui name="CalendarDays" size={16} />
+          {pending.includes(thisMonth) ? '이번 달 고정지출 미처리' : `고정지출 미처리 ${pending.length}개월`}
+        </button>
+      ) : null}
+      {estimateCount > 0 || f.estimateOnly ? (
+        <button
+          type="button"
+          class="alert-chip"
+          aria-pressed={f.estimateOnly}
+          onClick={() => (filter.value = { ...f, estimateOnly: !f.estimateOnly })}
+        >
+          <span class="pill pill-estimate">예상</span>
+          금액 {estimateCount}건
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -217,10 +221,41 @@ function toggleFilter(patch: { userId?: string; payMethodId?: string; categoryId
   filter.value = next;
 }
 
-function Breakdown({ s }: { s: MonthSummary }) {
+/** 모바일: 구분별 합계 아코디언 왼쪽의 정렬 전환 버튼 */
+function SortButton() {
+  const sort = settings.value.dateSort;
+  const next = sort === 'desc' ? 'asc' : 'desc';
+  return (
+    <button
+      type="button"
+      class="sort-btn"
+      aria-label={`날짜 정렬: ${sort === 'desc' ? '최신순' : '오래된순'}. 누르면 ${next === 'desc' ? '최신순' : '오래된순'}으로 바뀝니다`}
+      onClick={() => updateSettings({ dateSort: next })}
+    >
+      <Ui name={sort === 'desc' ? 'ArrowDown' : 'ArrowUp'} size={16} />
+      <span>{sort === 'desc' ? '최신순' : '오래된순'}</span>
+    </button>
+  );
+}
+
+function Breakdown({ s, hasList }: { s: MonthSummary | null; hasList: boolean }) {
   const f = filter.value;
   const vp = viewport.value;
-  const open = vp !== 'mobile' || chipsOpen.value;
+  const mobile = vp === 'mobile';
+  const hasBreak = !!s && s.count > 0;
+  if (!mobile && !hasBreak) return null;
+  if (mobile && !hasBreak && !hasList) return null;
+  const open = !mobile || chipsOpen.value;
+  if (!s) {
+    return (
+      <section class="breakdown">
+        <div class="breakdown-bar">
+          <SortButton />
+          <span class="grow" />
+        </div>
+      </section>
+    );
+  }
   const personList = personsSorted.value.filter((u) => (s.byUser.get(u.id) ?? 0) > 0);
   const groupList = groupsSorted.value.filter((u) => (s.byUser.get(u.id) ?? 0) > 0);
   const noUser = s.byUser.get(null) ?? 0;
@@ -230,21 +265,27 @@ function Breakdown({ s }: { s: MonthSummary }) {
     .filter((c) => (s.byCategory.get(c.id) ?? 0) > 0)
     .sort((a, b) => (s.byCategory.get(b.id) ?? 0) - (s.byCategory.get(a.id) ?? 0));
   const noCat = s.byCategory.get(null) ?? 0;
-  if (s.count === 0) return null;
   return (
     <section class="breakdown" aria-label="구분별 합계">
-      {vp === 'mobile' ? (
-        <button
-          type="button"
-          class="breakdown-toggle"
-          aria-expanded={open}
-          onClick={() => (chipsOpen.value = !chipsOpen.value)}
-        >
-          구분별 합계
-          <Ui name={open ? 'ChevronUp' : 'ChevronDown'} size={16} />
-        </button>
+      {mobile ? (
+        <div class="breakdown-bar">
+          <SortButton />
+          {hasBreak ? (
+            <button
+              type="button"
+              class="breakdown-toggle"
+              aria-expanded={open}
+              onClick={() => (chipsOpen.value = !chipsOpen.value)}
+            >
+              구분별 합계
+              <Ui name={open ? 'ChevronUp' : 'ChevronDown'} size={16} />
+            </button>
+          ) : (
+            <span class="grow" />
+          )}
+        </div>
       ) : null}
-      {open ? (
+      {hasBreak && open ? (
         <div class="breakdown-body">
           <div class="bk-group">
             <span class="bk-title">사용자</span>
@@ -363,6 +404,8 @@ function FilterBar({ resultCount, resultTotal }: { resultCount: number; resultTo
       label: categoriesById.value.get(f.categoryId)?.name ?? '분류',
       clear: () => (filter.value = { ...f, categoryId: null }),
     });
+  if (f.estimateOnly)
+    tags.push({ label: '예상 금액만', clear: () => (filter.value = { ...f, estimateOnly: false }) });
   const selectedPerson = f.userId && f.userId !== 'none' ? usersById.value.get(f.userId) : undefined;
   return (
     <section class="filterbar" aria-label="검색·필터">
@@ -451,13 +494,24 @@ function rowKey(e: KeyboardEvent, entry: Entry) {
 
 function TableList({ groups, withYear }: { groups: DateGroup[]; withYear: boolean }) {
   const vp = viewport.value;
+  const sort = settings.value.dateSort;
   const mode = iconMode.value;
   const compact = vp === 'tablet';
   const t = today.value;
   return (
     <div class={`ledger ${compact ? 'is-compact' : ''}`} role="table" aria-label="사용 내역">
       <div class="row head" role="row">
-        <div class="c-date" role="columnheader">날짜</div>
+        <div class="c-date" role="columnheader" aria-sort={sort === 'desc' ? 'descending' : 'ascending'}>
+          <button
+            type="button"
+            class="sort-head"
+            title={`누르면 ${sort === 'desc' ? '오래된순' : '최신순'}으로 바뀝니다`}
+            onClick={() => updateSettings({ dateSort: sort === 'desc' ? 'asc' : 'desc' })}
+          >
+            날짜
+            <Ui name={sort === 'desc' ? 'ArrowDown' : 'ArrowUp'} size={14} />
+          </button>
+        </div>
         <div class="c-store" role="columnheader">사용처</div>
         {!compact ? <div class="c-memo" role="columnheader">명세</div> : null}
         <div class="c-cat" role="columnheader">분류</div>
@@ -597,6 +651,8 @@ export function HistoryView() {
   const f = filter.value;
   const filtering = isFilterActive(f);
   const allPeriod = filtering && searchAllPeriod.value;
+  const sort = settings.value.dateSort;
+  const fd = settings.value.futureDisplay;
 
   // 화면 단축키: ← → 로 월 이동 (입력 중이거나 시트가 열려 있으면 제외)
   useEffect(() => {
@@ -611,20 +667,38 @@ export function HistoryView() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
+  // 달을 옮기면 '건수만 표시'로 임시로 펼친 상태를 접는다
+  useEffect(() => {
+    revealFuture.value = false;
+  }, [ym]);
+
+  // 내림차순에서 오늘 이후 항목이 위에 쌓이는 경우, 이번 달을 열 때 오늘 그룹이 맨 위에 오게 한다
+  useEffect(() => {
+    if (ym !== ymOf(today.value) || fd !== 'all' || sort !== 'desc') return;
+    if (isFilterActive(filter.value)) return;
+    if (monthEntries.value.some((e) => e.date > today.value)) scrollToDate(today.value);
+  }, [ym, fd, sort]);
+
   const summary = summarize(monthEntries.value, ym, t);
   const base = allPeriod ? entries.value : monthEntries.value;
   const list = filtering ? filterEntries(base, f, usersById.value) : base;
-  const groups = groupByDate(list, t);
+  // 오늘 이후 항목 표시 설정: 검색·필터 결과에는 항상 표시한다
+  const hideFuture = !filtering && (fd === 'hide' || (fd === 'count' && !revealFuture.value));
+  const visible = hideFuture ? list.filter((e) => e.date <= t) : list;
+  const hiddenCount = list.length - visible.length;
+  const groups = groupByDate(visible, t, sort);
   const counted = list.filter((e) => isCounted(e, t));
   const resultTotal = counted.reduce((a, e) => a + e.amount, 0);
+  const estimateCount = monthEntries.value.filter((e) => e.isEstimate).length;
   const vp = viewport.value;
   const noUsers = users.value.length === 0;
 
   return (
     <div class="history">
       <MonthBar />
-      {!allPeriod ? <Summary s={summary} /> : null}
-      {!allPeriod ? <Breakdown s={summary} /> : null}
+      <AlertChips estimateCount={estimateCount} />
+      {!allPeriod ? <Summary s={summary} ym={ym} /> : null}
+      <Breakdown s={allPeriod ? null : summary} hasList={groups.length > 0} />
       <FilterBar resultCount={list.length} resultTotal={resultTotal} />
 
       {entries.value.length === 0 ? (
@@ -654,6 +728,21 @@ export function HistoryView() {
             </button>
           </div>
         </Empty>
+      ) : groups.length === 0 && hiddenCount > 0 ? (
+        <Empty title={`${formatYm(ym)}에는 표시할 내역이 없습니다`}>
+          <p>오늘 이후 항목 {hiddenCount}건이 숨겨져 있습니다.</p>
+          <div class="empty-actions">
+            {fd === 'count' ? (
+              <button type="button" class="btn" onClick={() => (revealFuture.value = true)}>
+                목록에 보기
+              </button>
+            ) : (
+              <button type="button" class="btn" onClick={() => openSettings('display')}>
+                표시 설정 바꾸기
+              </button>
+            )}
+          </div>
+        </Empty>
       ) : groups.length === 0 ? (
         <Empty title={filtering ? '조건에 맞는 내역이 없습니다' : `${formatYm(ym)}에는 기록이 없습니다`}>
           <div class="empty-actions">
@@ -676,5 +765,3 @@ export function HistoryView() {
     </div>
   );
 }
-
-export { hasSample, clearSample };

@@ -69,19 +69,69 @@ export interface PayDetail extends Base {
 export type ThemeSetting = 'system' | 'light' | 'dark';
 export type IconModeSetting = 'auto' | 'full' | 'icon';
 
+/** 내역 목록의 날짜 정렬: desc = 최신 먼저(기본) */
+export type DateSort = 'desc' | 'asc';
+/** 오늘 이후([보류]·[예정]) 항목의 목록 표시: 모두 / 건수만 / 표시 안 함 */
+export type FutureDisplay = 'all' | 'count' | 'hide';
+
 export interface AppSettings {
   theme: ThemeSetting;
   iconMode: IconModeSetting;
   fontScale: 100 | 110 | 120;
+  dateSort: DateSort;
+  /** 월간 목표 지출액(원). null이면 목표 없음 */
+  monthlyGoal: number | null;
+  futureDisplay: FutureDisplay;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
   iconMode: 'auto',
   fontScale: 100,
+  dateSort: 'desc',
+  monthlyGoal: null,
+  futureDisplay: 'all',
 };
 
-export type TableName = 'entries' | 'categories' | 'users' | 'payMethods' | 'payDetails';
+export type TableName =
+  | 'entries'
+  | 'categories'
+  | 'users'
+  | 'payMethods'
+  | 'payDetails'
+  | 'fixedItems'
+  | 'fixedRuns';
+
+/** 설정 > 목록 관리에서 다루는 목록 */
+export type ListTableName = 'categories' | 'users' | 'payMethods' | 'payDetails';
+
+/** 고정지출 반복 규칙. day는 1~31 또는 'last'(말일). 없는 일자는 그 달 마지막 날로 보정 */
+export type FixedSchedule =
+  | { kind: 'monthly'; day: number | 'last' }
+  | { kind: 'months'; months: number[]; day: number | 'last' }
+  | { kind: 'every'; every: number; baseYm: string; day: number | 'last' };
+
+/** 설정에 등록해 두는 고정지출 항목 */
+export interface FixedItem extends Base {
+  name: string;
+  memo: string;
+  amount: number;
+  /** estimate이면 추가된 내역에 [예상] 알약 */
+  amountMode: 'fixed' | 'estimate';
+  schedule: FixedSchedule;
+  category: ID | null;
+  user: ID | null;
+  payMethod: ID | null;
+  payDetail: ID | null;
+  active: boolean;
+  order: number;
+}
+
+/** 월별 처리 상태. 이 기록이 있으면 월초 입력 창이 자동으로 다시 뜨지 않는다. id = run_YYYY-MM */
+export interface FixedMonthRun extends Base {
+  ym: string;
+  status: 'done' | 'skipped';
+}
 
 export interface EntryFilter {
   text: string;
@@ -92,6 +142,8 @@ export interface EntryFilter {
   payDetailId: ID | null;
   /** 개인을 고를 때 그 개인이 속한 그룹 내역도 포함 */
   includeGroups: boolean;
+  /** [예상] 금액 미확정 내역만 */
+  estimateOnly: boolean;
 }
 
 export const EMPTY_FILTER: EntryFilter = {
@@ -101,4 +153,5 @@ export const EMPTY_FILTER: EntryFilter = {
   payMethodId: null,
   payDetailId: null,
   includeGroups: false,
+  estimateOnly: false,
 };

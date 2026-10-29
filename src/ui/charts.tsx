@@ -1,0 +1,334 @@
+import type { ComponentChildren } from 'preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { compactWon, niceScale, won } from '../lib/format';
+import { showPopover } from './overlay';
+
+/** 차트 영역의 실제 너비(px). 글자 크기를 화면에 맞게 유지하려고 viewBox 대신 실제 크기로 그린다. */
+export function useWidth(initial = 320) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(initial);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const set = () => setW(Math.max(200, Math.floor(el.clientWidth)));
+    set();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w] as const;
+}
+
+export interface Tip {
+  title: string;
+  lines?: string[];
+  swatch?: string;
+}
+
+/** 막대·점의 위쪽에 툴팁을 띄운다 (마우스는 올리면, 터치·키보드는 누르면). */
+function tipAt(svg: SVGSVGElement | null, x: number, y: number, tip: Tip) {
+  if (!svg) return;
+  const r = svg.getBoundingClientRect();
+  const anchor = {
+    getBoundingClientRect: () =>
+      ({ left: r.left + x, width: 0, right: r.left + x, top: r.top + y - 12, bottom: r.top + y - 12, height: 0 }) as DOMRect,
+  };
+  showPopover(anchor as unknown as Element, tip.title, tip.lines ?? [], tip.swatch);
+}
+
+const hoverOnly = (fn: () => void) => (e: PointerEvent) => {
+  if (e.pointerType === 'mouse') fn();
+};
+
+/* ───────── 막대(세로) ───────── */
+
+export function ColumnChart({
+  values,
+  labels,
+  tips,
+  height = 200,
+  labelEvery = 1,
+  ariaLabel,
+  color = 'var(--primary)',
+  emphasize,
+}: {
+  values: number[];
+  labels: string[];
+  tips: Tip[];
+  height?: number;
+  labelEvery?: number;
+  ariaLabel: string;
+  color?: string;
+  /** 눈에 띄게 할 막대의 위치 (나머지는 옅게) */
+  emphasize?: number;
+}) {
+  const [ref, w] = useWidth();
+  const svgRef = useRef<SVGSVGElement>(null);
+  const L = 44;
+  const R = 8;
+  const T = 10;
+  const B = 24;
+  const pw = w - L - R;
+  const ph = height - T - B;
+  const max = Math.max(0, ...values);
+  const { max: top, step } = niceScale(max, 4);
+  const band = pw / Math.max(1, values.length);
+  const bw = Math.min(24, Math.max(3, band * 0.7));
+  const ticks: number[] = [];
+  for (let v = 0; v <= top + 1e-9; v += step) ticks.push(v);
+  const y = (v: number) => T + ph - (v / top) * ph;
+
+  return (
+    <div ref={ref} class="chart">
+      <svg ref={svgRef} width={w} height={height} role="img" aria-label={ariaLabel}>
+        {ticks.map((v) => (
+          <g key={v}>
+            <line x1={L} x2={w - R} y1={y(v)} y2={y(v)} stroke="var(--line)" stroke-width="1" />
+            <text x={L - 6} y={y(v) + 4} text-anchor="end" class="chart-tick">
+              {compactWon(v)}
+            </text>
+          </g>
+        ))}
+        {values.map((v, i) => {
+          const cx = L + band * i + band / 2;
+          const h = (v / top) * ph;
+          const x0 = cx - bw / 2;
+          const y0 = T + ph - h;
+          const r = Math.min(4, h, bw / 2);
+          const show = () => tipAt(svgRef.current, cx, h > 0 ? y0 : T + ph, tips[i]);
+          return (
+            <g key={i}>
+              {h > 0 ? (
+                <path
+                  d={`M${x0},${y0 + h} L${x0},${y0 + r} Q${x0},${y0} ${x0 + r},${y0} L${x0 + bw - r},${y0} Q${x0 + bw},${y0} ${x0 + bw},${y0 + r} L${x0 + bw},${y0 + h} Z`}
+                  fill={color}
+                  opacity={emphasize === undefined || emphasize === i ? 1 : 0.45}
+                />
+              ) : null}
+              {i % labelEvery === 0 ? (
+                <text x={cx} y={height - 6} text-anchor="middle" class="chart-tick">
+                  {labels[i]}
+                </text>
+              ) : null}
+              <rect
+                x={L + band * i}
+                y={T}
+                width={band}
+                height={ph + B - 4}
+                fill="transparent"
+                tabIndex={0}
+                role="button"
+                aria-label={`${tips[i].title} ${(tips[i].lines ?? []).join(' ')}`}
+                onPointerEnter={hoverOnly(show)}
+                onClick={show}
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), show())}
+              />
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+/* ───────── 꺾은선 ───────── */
+
+export function LineChart({
+  values,
+  labels,
+  tips,
+  height = 200,
+  labelEvery = 1,
+  ariaLabel,
+  color = 'var(--primary)',
+}: {
+  values: number[];
+  labels: string[];
+  tips: Tip[];
+  height?: number;
+  labelEvery?: number;
+  ariaLabel: string;
+  color?: string;
+}) {
+  const [ref, w] = useWidth();
+  const svgRef = useRef<SVGSVGElement>(null);
+  const L = 44;
+  const R = 14;
+  const T = 12;
+  const B = 24;
+  const pw = w - L - R;
+  const ph = height - T - B;
+  const max = Math.max(0, ...values);
+  const { max: top, step } = niceScale(max, 4);
+  const n = values.length;
+  const x = (i: number) => L + (n <= 1 ? pw / 2 : (pw * i) / (n - 1));
+  const y = (v: number) => T + ph - (v / top) * ph;
+  const ticks: number[] = [];
+  for (let v = 0; v <= top + 1e-9; v += step) ticks.push(v);
+  const pts = values.map((v, i) => `${x(i)},${y(v)}`);
+  const line = pts.length ? `M${pts.join(' L')}` : '';
+  const area = pts.length ? `${line} L${x(n - 1)},${T + ph} L${x(0)},${T + ph} Z` : '';
+  const last = n - 1;
+
+  return (
+    <div ref={ref} class="chart">
+      <svg ref={svgRef} width={w} height={height} role="img" aria-label={ariaLabel}>
+        {ticks.map((v) => (
+          <g key={v}>
+            <line x1={L} x2={w - R} y1={y(v)} y2={y(v)} stroke="var(--line)" stroke-width="1" />
+            <text x={L - 6} y={y(v) + 4} text-anchor="end" class="chart-tick">
+              {compactWon(v)}
+            </text>
+          </g>
+        ))}
+        {area ? <path d={area} fill={color} opacity="0.1" /> : null}
+        {line ? <path d={line} fill="none" stroke={color} stroke-width="2" stroke-linejoin="round" stroke-linecap="round" /> : null}
+        {values.map((v, i) => {
+          const show = () => tipAt(svgRef.current, x(i), y(v), tips[i]);
+          return (
+            <g key={i}>
+              {i % labelEvery === 0 ? (
+                <text x={x(i)} y={height - 6} text-anchor="middle" class="chart-tick">
+                  {labels[i]}
+                </text>
+              ) : null}
+              {/* 끝점만 표시하고, 나머지 점은 올렸을 때만 보이게 해 선이 묻히지 않게 한다 */}
+              {i === last ? (
+                <circle cx={x(i)} cy={y(v)} r="4" fill={color} stroke="var(--surface)" stroke-width="2" />
+              ) : null}
+              <circle
+                cx={x(i)}
+                cy={y(v)}
+                r="14"
+                fill="transparent"
+                tabIndex={0}
+                role="button"
+                aria-label={`${tips[i].title} ${(tips[i].lines ?? []).join(' ')}`}
+                onPointerEnter={hoverOnly(show)}
+                onClick={show}
+                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), show())}
+              />
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+/* ───────── 도넛 ───────── */
+
+export interface DonutSlice {
+  label: string;
+  value: number;
+  color: string;
+}
+
+export function Donut({ slices, center, ariaLabel }: { slices: DonutSlice[]; center: ComponentChildren; ariaLabel: string }) {
+  const size = 168;
+  const stroke = 26;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const total = slices.reduce((a, s) => a + s.value, 0);
+  const svgRef = useRef<SVGSVGElement>(null);
+  let acc = 0;
+  const GAP = 2;
+  return (
+    <div class="donut" style={{ width: `${size}px`, height: `${size}px` }}>
+      <svg ref={svgRef} width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={ariaLabel}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--surface-2)" stroke-width={stroke} />
+        {total > 0
+          ? slices.map((s, i) => {
+              const len = (s.value / total) * c;
+              const dash = Math.max(0, len - (slices.length > 1 ? GAP : 0));
+              const offset = -acc;
+              acc += len;
+              const show = () => {
+                const rect = svgRef.current?.getBoundingClientRect();
+                if (!rect) return;
+                const mid = (acc - len / 2) / c; // 0~1, 12시 방향부터 시계 방향
+                const ang = mid * 2 * Math.PI - Math.PI / 2;
+                const x = size / 2 + Math.cos(ang) * r;
+                const y = size / 2 + Math.sin(ang) * r;
+                tipAt(svgRef.current, x, y + 12, {
+                  title: s.label,
+                  lines: [`${won(s.value)}원 (${Math.round((s.value / total) * 1000) / 10}%)`],
+                  swatch: s.color,
+                });
+              };
+              return (
+                <circle
+                  key={i}
+                  cx={size / 2}
+                  cy={size / 2}
+                  r={r}
+                  fill="none"
+                  stroke={s.color}
+                  stroke-width={stroke}
+                  stroke-dasharray={`${dash} ${c - dash}`}
+                  stroke-dashoffset={offset}
+                  transform={`rotate(-90 ${size / 2} ${size / 2})`}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`${s.label} ${won(s.value)}원`}
+                  onPointerEnter={hoverOnly(show)}
+                  onClick={show}
+                  onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), show())}
+                />
+              );
+            })
+          : null}
+      </svg>
+      <div class="donut-center">{center}</div>
+    </div>
+  );
+}
+
+/* ───────── 순위 막대 목록 ───────── */
+
+export interface RankItem {
+  key: string;
+  label: string;
+  value: number;
+  color: string;
+  icon?: ComponentChildren;
+  sub?: string;
+  onClick?: () => void;
+}
+
+export function RankedBars({ items, total }: { items: RankItem[]; total: number }) {
+  const max = Math.max(1, ...items.map((i) => i.value));
+  return (
+    <ul class="ranked">
+      {items.map((it) => {
+        const pct = total > 0 ? Math.round((it.value / total) * 1000) / 10 : 0;
+        const inner = (
+          <>
+            <span class="rk-label">
+              {it.icon ?? <span class="dot" style={{ background: it.color }} aria-hidden="true" />}
+              <span class="rk-name">{it.label}</span>
+              {it.sub ? <small class="muted">{it.sub}</small> : null}
+            </span>
+            <span class="rk-bar" aria-hidden="true">
+              <span class="rk-fill" style={{ width: `${Math.max(1.5, (it.value / max) * 100)}%`, background: it.color }} />
+            </span>
+            <span class="rk-value num">{won(it.value)}</span>
+            <span class="rk-pct num">{pct}%</span>
+          </>
+        );
+        return (
+          <li key={it.key}>
+            {it.onClick ? (
+              <button type="button" class="rk-row is-button" onClick={it.onClick}>
+                {inner}
+              </button>
+            ) : (
+              <div class="rk-row">{inner}</div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}

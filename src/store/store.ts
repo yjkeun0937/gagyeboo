@@ -1,6 +1,7 @@
 import { computed, signal, type Signal } from '@preact/signals';
 import { buildStoreIndex, compareEntries } from '../lib/calc';
 import { todayKST, ymOf } from '../lib/dates';
+import { dueDate, fixedEntryId, pendingMonths, runId } from '../lib/fixed';
 import { uid } from '../lib/format';
 import { seedCategories, seedPayMethods } from '../lib/seed';
 import {
@@ -9,7 +10,10 @@ import {
   type Base,
   type Category,
   type Entry,
+  type FixedItem,
+  type FixedMonthRun,
   type ID,
+  type ListTableName,
   type PayDetail,
   type PayMethod,
   type TableName,
@@ -25,7 +29,11 @@ export const categories = signal<Category[]>([]);
 export const users = signal<User[]>([]);
 export const payMethods = signal<PayMethod[]>([]);
 export const payDetails = signal<PayDetail[]>([]);
+export const fixedItems = signal<FixedItem[]>([]);
+export const fixedRuns = signal<FixedMonthRun[]>([]);
 export const settings = signal<AppSettings>({ ...DEFAULT_SETTINGS });
+/** 이 기기에서 앱을 처음 쓴 달. 이 달 이전은 고정지출 월초 입력 대상이 아니다. */
+export const firstUseYm = signal(ymOf(todayKST()));
 
 export const today = signal(todayKST());
 export const viewMonth = signal(ymOf(today.value));
@@ -36,6 +44,8 @@ interface Rows {
   users: User;
   payMethods: PayMethod;
   payDetails: PayDetail;
+  fixedItems: FixedItem;
+  fixedRuns: FixedMonthRun;
 }
 
 const sigs: { [K in TableName]: Signal<Rows[K][]> } = {
@@ -44,6 +54,8 @@ const sigs: { [K in TableName]: Signal<Rows[K][]> } = {
   users,
   payMethods,
   payDetails,
+  fixedItems,
+  fixedRuns,
 };
 
 export const usersById = computed(() => new Map(users.value.map((u) => [u.id, u])));
@@ -63,6 +75,17 @@ export const monthEntries = computed(() =>
   entries.value.filter((e) => e.date.startsWith(viewMonth.value)).sort(compareEntries),
 );
 export const storeIndex = computed(() => buildStoreIndex(entries.value));
+export const fixedItemsSorted = computed(() => [...fixedItems.value].sort(byOrder));
+/** 월초 입력 창에서 처리해야 하는 달(오래된 순) */
+export const pendingFixed = computed(() =>
+  pendingMonths(
+    firstUseYm.value,
+    ymOf(today.value),
+    fixedRuns.value,
+    fixedItems.value,
+    entries.value,
+  ),
+);
 
 /* ───────── 초기화 ───────── */
 
@@ -73,13 +96,16 @@ export function refreshToday() {
 
 async function loadFromDb() {
   const d = db();
-  const [e, c, u, p, pd, st] = await Promise.all([
+  const [e, c, u, p, pd, fi, fr, st, fu] = await Promise.all([
     d.entries.toArray(),
     d.categories.toArray(),
     d.users.toArray(),
     d.payMethods.toArray(),
     d.payDetails.toArray(),
+    d.fixedItems.toArray(),
+    d.fixedRuns.toArray(),
     d.meta.get('settings'),
+    d.meta.get('firstUseYm'),
   ]);
   const live = <T extends Base>(rows: T[]) => rows.filter((r) => !r.deleted);
   entries.value = live(e);
@@ -87,6 +113,9 @@ async function loadFromDb() {
   users.value = live(u);
   payMethods.value = live(p);
   payDetails.value = live(pd);
+  fixedItems.value = live(fi);
+  fixedRuns.value = live(fr);
+  if (typeof fu?.value === 'string') firstUseYm.value = fu.value;
   settings.value = { ...DEFAULT_SETTINGS, ...((st?.value as Partial<AppSettings>) ?? {}) };
 }
 
@@ -102,6 +131,9 @@ export async function initStore(dbName?: string) {
     await d.categories.bulkPut(seedCategories().filter((c) => !have.has(c.id)));
     await d.payMethods.bulkPut(seedPayMethods().filter((p) => !have.has(p.id)));
     await d.meta.put({ key: 'seeded', value: true });
+  }
+  if (!(await d.meta.get('firstUseYm'))) {
+    await d.meta.put({ key: 'firstUseYm', value: ymOf(todayKST()) });
   }
   await loadFromDb();
   today.value = todayKST();
@@ -187,31 +219,34 @@ export function nextOrder(list: { order: number }[]): number {
   return list.reduce((m, x) => Math.max(m, x.order), -1) + 1;
 }
 
-export function usageOf(table: Exclude<TableName, 'entries'>, id: ID): number {
+export function usageOf(table: ListTableName, id: ID): number {
   const es = entries.value;
+  const fx = fixedItems.value;
   switch (table) {
     case 'categories':
-      return es.filter((e) => e.category === id).length;
+      return es.filter((e) => e.category === id).length + fx.filter((f) => f.category === id).length;
     case 'users':
       return (
         es.filter((e) => e.user === id).length +
+        fx.filter((f) => f.user === id).length +
         users.value.filter((u) => u.type === 'group' && u.memberIds.includes(id)).length
       );
     case 'payMethods':
       return (
         es.filter((e) => e.payMethod === id).length +
+        fx.filter((f) => f.payMethod === id).length +
         payDetails.value.filter((p) => p.payMethodId === id).length
       );
     case 'payDetails':
-      return es.filter((e) => e.payDetail === id).length;
+      return es.filter((e) => e.payDetail === id).length + fx.filter((f) => f.payDetail === id).length;
   }
 }
 
-export function canDelete(table: Exclude<TableName, 'entries'>, id: ID): boolean {
+export function canDelete(table: ListTableName, id: ID): boolean {
   return usageOf(table, id) === 0;
 }
 
-export async function deleteItem(table: Exclude<TableName, 'entries'>, id: ID): Promise<boolean> {
+export async function deleteItem(table: ListTableName, id: ID): Promise<boolean> {
   if (!canDelete(table, id)) return false;
   const row = (sigs[table].value as Base[]).find((r) => r.id === id);
   if (!row) return false;
@@ -221,7 +256,7 @@ export async function deleteItem(table: Exclude<TableName, 'entries'>, id: ID): 
 
 /** 이름 중복 검사 (앞뒤 공백·대소문자 무시). 사용자는 개인·그룹을 통틀어 검사한다. */
 export function nameTaken(
-  table: Exclude<TableName, 'entries'>,
+  table: ListTableName | 'fixedItems',
   name: string,
   exceptId?: ID,
 ): boolean {
@@ -235,7 +270,7 @@ type Orderable = { id: ID; order: number; type?: string };
 
 /** 같은 구역(사용자는 개인/그룹별) 안에서 위/아래로 한 칸 옮긴다. */
 export async function moveItem(
-  table: Exclude<TableName, 'entries'>,
+  table: ListTableName | 'fixedItems',
   id: ID,
   dir: -1 | 1,
 ): Promise<void> {
@@ -252,6 +287,80 @@ export async function moveItem(
   for (let k = 0; k < siblings.length; k++) {
     if (siblings[k].order !== k) await save(table, { ...siblings[k], order: k } as never);
   }
+}
+
+/* ───────── 고정지출 ───────── */
+
+export type FixedItemInput = Omit<FixedItem, 'id' | 'updatedAt' | 'deleted' | 'order'>;
+
+export async function addFixedItem(input: FixedItemInput): Promise<FixedItem> {
+  return save('fixedItems', { ...input, id: uid(), updatedAt: 0, order: nextOrder(fixedItems.value) });
+}
+
+export async function updateFixedItem(id: ID, patch: Partial<FixedItemInput>): Promise<void> {
+  const cur = fixedItems.value.find((f) => f.id === id);
+  if (cur) await save('fixedItems', { ...cur, ...patch });
+}
+
+/** 등록 항목을 지운다. 이미 만들어진 내역은 그대로 둔다. */
+export async function deleteFixedItem(id: ID): Promise<void> {
+  const cur = fixedItems.value.find((f) => f.id === id);
+  if (cur) await save('fixedItems', { ...cur, deleted: true });
+}
+
+export interface FixedPick {
+  itemId: ID;
+  /** 창에서 금액을 고쳤으면 그 금액(확정). 없으면 등록 금액 */
+  amount?: number;
+}
+
+/**
+ * 고른 항목을 그 달 지정일 날짜의 내역으로 추가하고 그 달을 '처리함'으로 기록한다.
+ * 이미 추가된 항목은 건너뛴다. 추가한 내역 ID를 돌려준다 (실행 취소용).
+ */
+export async function addFixedEntries(ym: string, picks: FixedPick[]): Promise<string[]> {
+  const live = new Set(entries.value.map((e) => e.id));
+  const made: string[] = [];
+  for (const p of picks) {
+    const item = fixedItems.value.find((f) => f.id === p.itemId);
+    if (!item) continue;
+    const id = fixedEntryId(item.id, ym);
+    const date = dueDate(item.schedule, ym);
+    if (!date || live.has(id)) continue;
+    const edited = p.amount !== undefined && p.amount !== item.amount;
+    await addEntry(
+      {
+        date,
+        store: item.name,
+        memo: item.memo,
+        category: item.category,
+        amount: p.amount ?? item.amount,
+        user: item.user,
+        payMethod: item.payMethod,
+        payDetail: item.payDetail,
+      },
+      {
+        id,
+        source: 'fixed',
+        fixedId: item.id,
+        fixedYm: ym,
+        isEstimate: item.amountMode === 'estimate' && !edited,
+      },
+    );
+    made.push(id);
+  }
+  await markMonth(ym, 'done');
+  return made;
+}
+
+export async function markMonth(ym: string, status: 'done' | 'skipped'): Promise<void> {
+  await save('fixedRuns', { id: runId(ym), updatedAt: 0, ym, status });
+}
+
+/** '처리함·건너뜀' 기록을 지워 그 달을 다시 미처리로 되돌린다. */
+export async function clearMonthRun(ym: string): Promise<void> {
+  const cur = fixedRuns.value.find((r) => r.ym === ym);
+  if (cur) await save('fixedRuns', { ...cur, deleted: true });
 }
 
 /* ───────── 설정 ───────── */
@@ -274,16 +383,21 @@ export interface BackupFile {
   users: User[];
   payMethods: PayMethod[];
   payDetails: PayDetail[];
+  /** v2부터. v1 백업에는 없다 */
+  fixedItems?: FixedItem[];
+  fixedRuns?: FixedMonthRun[];
 }
 
 export async function exportAll(): Promise<BackupFile> {
   const d = db();
-  const [e, c, u, p, pd] = await Promise.all([
+  const [e, c, u, p, pd, fi, fr] = await Promise.all([
     d.entries.toArray(),
     d.categories.toArray(),
     d.users.toArray(),
     d.payMethods.toArray(),
     d.payDetails.toArray(),
+    d.fixedItems.toArray(),
+    d.fixedRuns.toArray(),
   ]);
   return {
     app: 'gagyeboo',
@@ -295,6 +409,8 @@ export async function exportAll(): Promise<BackupFile> {
     users: u,
     payMethods: p,
     payDetails: pd,
+    fixedItems: fi,
+    fixedRuns: fr,
   };
 }
 
@@ -306,6 +422,9 @@ export function validateBackup(data: unknown): data is BackupFile {
   for (const k of ['entries', 'categories', 'users', 'payMethods', 'payDetails']) {
     if (!Array.isArray(b[k])) return false;
   }
+  for (const k of ['fixedItems', 'fixedRuns']) {
+    if (b[k] !== undefined && !Array.isArray(b[k])) return false;
+  }
   return (b.entries as Entry[]).every(
     (e) => typeof e?.id === 'string' && typeof e.date === 'string' && typeof e.amount === 'number',
   );
@@ -315,7 +434,7 @@ export async function importAll(data: BackupFile): Promise<void> {
   const d = db();
   await d.transaction(
     'rw',
-    [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.meta],
+    [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns, d.meta],
     async () => {
       await Promise.all([
         d.entries.clear(),
@@ -323,7 +442,11 @@ export async function importAll(data: BackupFile): Promise<void> {
         d.users.clear(),
         d.payMethods.clear(),
         d.payDetails.clear(),
+        d.fixedItems.clear(),
+        d.fixedRuns.clear(),
       ]);
+      await d.fixedItems.bulkPut(data.fixedItems ?? []);
+      await d.fixedRuns.bulkPut(data.fixedRuns ?? []);
       await d.entries.bulkPut(data.entries);
       await d.categories.bulkPut(data.categories);
       await d.users.bulkPut(data.users);
@@ -341,7 +464,7 @@ export async function resetAll(): Promise<void> {
   const d = db();
   await d.transaction(
     'rw',
-    [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.meta],
+    [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns, d.meta],
     async () => {
       await Promise.all([
         d.entries.clear(),
@@ -349,8 +472,11 @@ export async function resetAll(): Promise<void> {
         d.users.clear(),
         d.payMethods.clear(),
         d.payDetails.clear(),
+        d.fixedItems.clear(),
+        d.fixedRuns.clear(),
         d.meta.clear(),
       ]);
+      await d.meta.put({ key: 'firstUseYm', value: ymOf(todayKST()) });
       await d.categories.bulkPut(seedCategories());
       await d.payMethods.bulkPut(seedPayMethods());
       await d.meta.put({ key: 'seeded', value: true });

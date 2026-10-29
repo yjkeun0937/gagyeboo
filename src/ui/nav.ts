@@ -2,7 +2,7 @@ import { signal } from '@preact/signals';
 import { EMPTY_FILTER, type Entry, type EntryFilter } from '../lib/types';
 
 export type Tab = 'history' | 'stats' | 'settings';
-export type SettingsPage = 'fixed' | 'lists' | 'display' | 'account' | 'data' | 'about';
+export type SettingsPage = 'fixed' | 'lists' | 'goal' | 'display' | 'account' | 'data' | 'about';
 export type ListsTab = 'users' | 'payMethods' | 'payDetails' | 'categories';
 
 function load<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
@@ -54,3 +54,12 @@ export function openSettings(page: SettingsPage, list?: ListsTab) {
   if (list) listsTab.value = list;
   setTab('settings');
 }
+
+/** 고정지출 월초 입력 창. ym은 처음 보여줄 달(없으면 가장 오래된 미처리 달) */
+export const fixedWindow = signal<{ ym?: string } | null>(null);
+export const openFixedWindow = (ym?: string) => (fixedWindow.value = { ym });
+/** 이번 세션에서 월초 입력 창을 이미 닫았는가 (닫은 뒤 다시 자동으로 뜨지 않게) */
+export const fixedPromptShown = signal(false);
+
+/** '건수만 표시' 설정에서 건수 칩을 눌러 오늘 이후 항목을 임시로 펼친 상태 */
+export const revealFuture = signal(false);

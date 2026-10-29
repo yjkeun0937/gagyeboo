@@ -1,6 +1,7 @@
 import { addDays, clampDay, daysInMonth, addMonths } from './dates';
-import type { Entry, ID, PayDetail, User } from './types';
-import { nextStamp, save, today, users, entries, payDetails } from '../store/store';
+import { dueDate, fixedEntryId } from './fixed';
+import type { Entry, FixedItem, ID, PayDetail, User } from './types';
+import { nextStamp, save, today, users, entries, payDetails, fixedItems, fixedRuns } from '../store/store';
 
 /**
  * R1 확인용 가상 데이터. 이름·상호는 모두 지어낸 것이고, ID가 'sample_'로 시작한다.
@@ -20,6 +21,15 @@ const SAMPLE_DETAILS: PayDetail[] = [
   { id: `${P}d1`, name: '샘플카드A', payMethodId: 'pay_02', color: '#D1495B', order: 100, updatedAt: 0 },
   { id: `${P}d2`, name: '샘플카드B', payMethodId: 'pay_02', color: '#E8A400', order: 101, updatedAt: 0 },
   { id: `${P}d3`, name: '지역상품권', payMethodId: 'pay_05', color: '#2E9E6B', order: 102, updatedAt: 0 },
+];
+
+/** 월초 입력 창 확인용 가상 고정지출 */
+const SAMPLE_FIXED: FixedItem[] = [
+  { id: `${P}fx1`, name: '샘플관리비', memo: '아파트 관리비', amount: 300000, amountMode: 'estimate', schedule: { kind: 'monthly', day: 'last' }, category: 'cat_11', user: `${P}g1`, payMethod: 'pay_01', payDetail: null, active: true, order: 100, updatedAt: 0 },
+  { id: `${P}fx2`, name: '샘플통신', memo: '휴대폰 요금', amount: 54000, amountMode: 'fixed', schedule: { kind: 'monthly', day: 15 }, category: 'cat_05', user: `${P}g1`, payMethod: 'pay_02', payDetail: `${P}d1`, active: true, order: 101, updatedAt: 0 },
+  { id: `${P}fx3`, name: '샘플보험', memo: '실비 보험', amount: 38990, amountMode: 'estimate', schedule: { kind: 'monthly', day: 25 }, category: 'cat_10', user: `${P}u1`, payMethod: 'pay_02', payDetail: `${P}d2`, active: true, order: 102, updatedAt: 0 },
+  { id: `${P}fx4`, name: '샘플가스', memo: '2개월마다', amount: 41000, amountMode: 'fixed', schedule: { kind: 'every', every: 2, baseYm: '2026-10', day: 'last' }, category: 'cat_11', user: `${P}g1`, payMethod: 'pay_01', payDetail: null, active: true, order: 103, updatedAt: 0 },
+  { id: `${P}fx5`, name: '샘플자동차세', memo: '7·9월', amount: 150000, amountMode: 'fixed', schedule: { kind: 'months', months: [7, 9], day: 30 }, category: 'cat_11', user: `${P}u1`, payMethod: 'pay_02', payDetail: `${P}d1`, active: true, order: 104, updatedAt: 0 },
 ];
 
 interface Tpl {
@@ -65,13 +75,15 @@ function rng(seed: number) {
 
 export function hasSample(): boolean {
   return (
-    users.value.some((u) => u.id.startsWith(P)) || entries.value.some((e) => e.id.startsWith(P))
+    users.value.some((u) => u.id.startsWith(P)) ||
+    entries.value.some((e) => e.id.startsWith(P) || e.fixedId?.startsWith(P))
   );
 }
 
 export async function loadSample(): Promise<number> {
   for (const u of SAMPLE_USERS) await save('users', u);
   for (const d of SAMPLE_DETAILS) await save('payDetails', d);
+  for (const f of SAMPLE_FIXED) await save('fixedItems', f);
 
   const rand = rng(20261028);
   const t = today.value;
@@ -109,7 +121,7 @@ export async function loadSample(): Promise<number> {
 
   // 화면 확인용: 오늘 이후 날짜의 [예정] 내역과 [보류][예상] 고정지출 내역
   const future = addDays(t, 3);
-  const fixedDate = future.startsWith(thisMonth) ? future : `${thisMonth}-28`;
+  const fixedDate = dueDate({ kind: 'monthly', day: 'last' }, thisMonth) ?? `${thisMonth}-28`;
   await save('entries', {
     id: `${P}e-scheduled`,
     date: future,
@@ -125,7 +137,7 @@ export async function loadSample(): Promise<number> {
     updatedAt: 0,
   });
   await save('entries', {
-    id: `${P}e-pending`,
+    id: fixedEntryId(`${P}fx1`, thisMonth),
     date: fixedDate > t ? fixedDate : addDays(t, 1),
     store: '샘플관리비',
     memo: '보류·예상 확인용',
@@ -146,9 +158,18 @@ export async function loadSample(): Promise<number> {
 
 export async function clearSample(): Promise<number> {
   let n = 0;
-  for (const e of entries.value.filter((x) => x.id.startsWith(P))) {
+  // 가상 고정지출에서 만든 내역(ID는 fx_sample_…)도 함께 지운다
+  for (const e of entries.value.filter((x) => x.id.startsWith(P) || x.fixedId?.startsWith(P))) {
     await save('entries', { ...e, deleted: true });
     n++;
+  }
+  for (const f of fixedItems.value.filter((x) => x.id.startsWith(P))) {
+    await save('fixedItems', { ...f, deleted: true });
+  }
+  // 가상 고정지출을 처리했다는 기록이 남지 않도록 월 처리 상태도 비운다
+  // (직접 등록한 고정지출이 있으면 그 처리 기록은 건드리지 않는다)
+  if (!fixedItems.value.some((x) => !x.id.startsWith(P))) {
+    for (const r of fixedRuns.value) await save('fixedRuns', { ...r, deleted: true });
   }
   for (const d of payDetails.value.filter((x) => x.id.startsWith(P))) {
     await save('payDetails', { ...d, deleted: true });

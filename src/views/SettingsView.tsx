@@ -1,4 +1,6 @@
 import { useRef, useState } from 'preact/hooks';
+import { digitsOnly, won } from '../lib/format';
+import type { FutureDisplay } from '../lib/types';
 import { clearSample, hasSample, loadSample } from '../lib/sample';
 import { todayKST } from '../lib/dates';
 import {
@@ -16,11 +18,13 @@ import { Ui } from '../ui/icons';
 import { settingsPage, type SettingsPage } from '../ui/nav';
 import { askConfirm } from '../ui/overlay';
 import { viewport } from '../ui/viewport';
+import { FixedPage } from './FixedPage';
 import { ListsManager } from './ListsManager';
 
-const MENU: { id: SettingsPage; label: string; desc: string; icon: 'CalendarDays' | 'ListChecks' | 'Palette' | 'Cloud' | 'Database' | 'Info' }[] = [
+const MENU: { id: SettingsPage; label: string; desc: string; icon: 'CalendarDays' | 'ListChecks' | 'Palette' | 'Cloud' | 'Database' | 'Info' | 'Target' }[] = [
   { id: 'fixed', label: '고정지출', desc: '매달 반복되는 지출 등록', icon: 'CalendarDays' },
   { id: 'lists', label: '목록 관리', desc: '사용자·지불수단·결제상세·분류', icon: 'ListChecks' },
+  { id: 'goal', label: '월간 목표', desc: '월간 목표 지출액과 초과 경고', icon: 'Target' },
   { id: 'display', label: '화면', desc: '테마·아이콘 표시·글자 크기', icon: 'Palette' },
   { id: 'account', label: '계정·동기화', desc: '구글 로그인과 기기 간 동기화', icon: 'Cloud' },
   { id: 'data', label: '데이터 관리', desc: '백업·복원·초기화', icon: 'Database' },
@@ -58,6 +62,71 @@ function Placeholder({ title, children }: { title: string; children: preact.Comp
   );
 }
 
+function GoalPage() {
+  const cur = settings.value.monthlyGoal;
+  const [v, setV] = useState(cur ? String(cur) : '');
+  const n = Number(v || 0);
+  const changed = (cur ?? 0) !== n;
+  const add = (x: number) => setV(String(n + x));
+  return (
+    <div class="settings-form">
+      <section class="card-block">
+        <h3>월간 목표 지출액</h3>
+        <p class="hint">
+          한 달에 쓰려는 금액의 상한입니다. 사용 내역의 <b>예상 월지출</b>이 이 금액을 넘을 것으로 계산되면 빨간 느낌표가 표시됩니다. 모든 달에 같은 금액이 적용됩니다.
+        </p>
+        <div class="field">
+          <label for="goal-in">
+            목표 금액 <small class="unit">원</small>
+          </label>
+          <input
+            id="goal-in"
+            class="input amount-input num"
+            inputMode="numeric"
+            placeholder="목표 없음"
+            value={v ? won(n) : ''}
+            onInput={(e) => setV(digitsOnly(e.currentTarget.value).slice(0, 10).replace(/^0+(?=\d)/, ''))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                (document.getElementById('goal-save') as HTMLButtonElement | null)?.click();
+              }
+            }}
+          />
+          <div class="quick">
+            <button type="button" class="btn small" onClick={() => add(10000)}>
+              +10,000
+            </button>
+            <button type="button" class="btn small" onClick={() => add(100000)}>
+              +100,000
+            </button>
+            <button type="button" class="btn small" onClick={() => setV('')}>
+              지우기
+            </button>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button
+            id="goal-save"
+            type="button"
+            class="btn primary"
+            disabled={!changed}
+            onClick={async () => {
+              await updateSettings({ monthlyGoal: n > 0 ? n : null });
+              showToast(n > 0 ? `월간 목표를 ${won(n)}원으로 정했습니다` : '월간 목표를 해제했습니다');
+            }}
+          >
+            {n > 0 ? '저장' : cur ? '목표 해제' : '저장'}
+          </button>
+        </div>
+        <p class="hint">
+          현재 목표: <b>{cur ? `${won(cur)}원` : '없음'}</b>. 예상 월지출은 엑셀과 같은 계산(하루평균 × 그 달 일수)이라, 월초에 큰 지출이 있으면 실제보다 크게 계산돼 경고가 일찍 뜰 수 있습니다.
+        </p>
+      </section>
+    </div>
+  );
+}
+
 function DisplayPage() {
   const s = settings.value;
   return (
@@ -88,6 +157,27 @@ function DisplayPage() {
           onChange={(v) => updateSettings({ iconMode: v })}
         />
         <p class="hint">자동: 휴대폰은 아이콘만(누르면 이름 표시), 태블릿은 아이콘 + 짧은 이름, 컴퓨터는 아이콘 + 이름.</p>
+      </div>
+      <div class="field">
+        <span class="label">오늘 이후 항목 (보류·예정)</span>
+        <Segmented<FutureDisplay>
+          label="오늘 이후 항목 표시"
+          value={s.futureDisplay}
+          options={[
+            { value: 'all', label: '모든 내역 표시' },
+            { value: 'count', label: '건수만 표시' },
+            { value: 'hide', label: '표시하지 않음' },
+          ]}
+          onChange={(v) => updateSettings({ futureDisplay: v })}
+        />
+        <p class="hint">
+          {s.futureDisplay === 'all'
+            ? '날짜가 오늘 이후인 내역도 목록에 모두 보입니다.'
+            : s.futureDisplay === 'count'
+              ? '목록에서는 숨기고, 월 요약에 건수만 보여 줍니다. 건수를 누르면 잠시 펼쳐 볼 수 있습니다.'
+              : '목록에서 숨기고 건수도 보이지 않습니다.'}{' '}
+          검색·필터 결과에는 항상 나타납니다. <b>집계에는 영향이 없습니다.</b> 보류는 합계에서 빠지고 예정은 포함됩니다.
+        </p>
       </div>
       <div class="field">
         <span class="label">글자 크기</span>
@@ -271,11 +361,9 @@ function AboutPage() {
 function Page({ id }: { id: SettingsPage }) {
   switch (id) {
     case 'fixed':
-      return (
-        <Placeholder title="고정지출은 다음 릴리스(R2)에서 제공됩니다">
-          <p>매달 반복되는 지출을 등록해 두면, 매월 첫 접속 때 추가할 항목을 고르는 창이 열립니다. 지정일 전에는 [보류]로 표시되어 합계에서 빠집니다.</p>
-        </Placeholder>
-      );
+      return <FixedPage />;
+    case 'goal':
+      return <GoalPage />;
     case 'lists':
       return <ListsManager />;
     case 'display':

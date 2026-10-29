@@ -1,6 +1,17 @@
 import { useEffect } from 'preact/hooks';
-import { ready, settings } from './store/store';
-import { closeSheet, openAdd, openSettings, setTab, sheet, tab, type Tab } from './ui/nav';
+import { pendingFixed, ready, settings } from './store/store';
+import {
+  closeSheet,
+  fixedPromptShown,
+  fixedWindow,
+  openAdd,
+  openFixedWindow,
+  openSettings,
+  setTab,
+  sheet,
+  tab,
+  type Tab,
+} from './ui/nav';
 import { viewport } from './ui/viewport';
 import { ConfirmLayer, PopoverLayer, ToastLayer, showPopover } from './ui/overlay';
 import { Ui } from './ui/icons';
@@ -8,6 +19,7 @@ import { HistoryView } from './views/HistoryView';
 import { EntrySheet } from './views/EntrySheet';
 import { StatsView } from './views/StatsView';
 import { SettingsView } from './views/SettingsView';
+import { FixedMonthWindow } from './views/FixedMonthWindow';
 
 const TABS: { id: Tab; label: string; icon: 'ReceiptText' | 'ChartColumn' | 'Settings' }[] = [
   { id: 'history', label: '사용 내역', icon: 'ReceiptText' },
@@ -104,9 +116,19 @@ function TopPanel() {
   );
 }
 
+/** 앱을 열 때, 이번 달(또는 지난 달)에 처리하지 않은 고정지출이 있으면 월초 입력 창을 자동으로 연다 */
+function useFixedPrompt() {
+  const isReady = ready.value;
+  useEffect(() => {
+    if (isReady && !fixedPromptShown.value && pendingFixed.value.length > 0) openFixedWindow();
+    if (isReady) fixedPromptShown.value = true;
+  }, [isReady]);
+}
+
 export function App() {
   useAppearance();
   useShortcuts();
+  useFixedPrompt();
   if (!ready.value) return <div class="boot">불러오는 중…</div>;
   const vp = viewport.value;
   const t = tab.value;
@@ -124,6 +146,7 @@ export function App() {
         </button>
       ) : null}
       {sheet.value ? <EntrySheet /> : null}
+      {fixedWindow.value ? <FixedMonthWindow /> : null}
       <PopoverLayer />
       <ToastLayer />
       <ConfirmLayer />

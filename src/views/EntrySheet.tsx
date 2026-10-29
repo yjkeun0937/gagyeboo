@@ -92,7 +92,7 @@ function initialForm(): { form: Form; entry?: Entry } {
   };
 }
 
-function Chip({
+export function Chip({
   active,
   onClick,
   children,
@@ -111,7 +111,7 @@ function Chip({
 }
 
 /** 사용자 선택: 개인 줄 / 그룹 줄, 그리고 바로 개인 추가 */
-function UserPicker({ value, onChange }: { value: ID | null; onChange: (v: ID | null) => void }) {
+export function UserPicker({ value, onChange }: { value: ID | null; onChange: (v: ID | null) => void }) {
   const persons = personsSorted.value;
   const groups = groupsSorted.value.filter((g) => !g.hidden);
   const [adding, setAdding] = useState(false);
@@ -220,7 +220,7 @@ function UserPicker({ value, onChange }: { value: ID | null; onChange: (v: ID | 
   );
 }
 
-function PayDetailPicker({
+export function PayDetailPicker({
   methodId,
   value,
   onChange,

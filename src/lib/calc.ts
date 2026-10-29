@@ -93,7 +93,8 @@ export interface DateGroup {
   total: number;
 }
 
-export function groupByDate(entries: Entry[], today: string): DateGroup[] {
+/** dir: 'desc'이면 날짜 그룹을 최신부터. 같은 날 안의 항목은 입력 순서를 유지한다. */
+export function groupByDate(entries: Entry[], today: string, dir: 'asc' | 'desc' = 'asc'): DateGroup[] {
   const sorted = [...entries].sort(compareEntries);
   const groups: DateGroup[] = [];
   for (const e of sorted) {
@@ -105,11 +106,18 @@ export function groupByDate(entries: Entry[], today: string): DateGroup[] {
     g.items.push(e);
     if (isCounted(e, today)) g.total += e.amount;
   }
-  return groups;
+  return dir === 'desc' ? groups.reverse() : groups;
 }
 
 export function isFilterActive(f: EntryFilter): boolean {
-  return !!(f.text.trim() || f.categoryId || f.userId || f.payMethodId || f.payDetailId);
+  return !!(
+    f.text.trim() ||
+    f.categoryId ||
+    f.userId ||
+    f.payMethodId ||
+    f.payDetailId ||
+    f.estimateOnly
+  );
 }
 
 export function filterEntries(
@@ -120,6 +128,7 @@ export function filterEntries(
   const q = f.text.trim().toLowerCase();
   return entries.filter((e) => {
     if (q && !`${e.store} ${e.memo}`.toLowerCase().includes(q)) return false;
+    if (f.estimateOnly && !e.isEstimate) return false;
     if (f.categoryId && e.category !== f.categoryId) return false;
     if (f.payMethodId && e.payMethod !== f.payMethodId) return false;
     if (f.payDetailId && e.payDetail !== f.payDetailId) return false;
@@ -173,4 +182,44 @@ export function suggestStores(index: StoreStat[], query: string, limit = 6): Sto
     else if (name.includes(q)) contains.push(s);
   }
   return [...starts, ...contains].slice(0, limit);
+}
+
+export interface GoalWarning {
+  title: string;
+  lines: string[];
+}
+
+const w = (n: number) => `${new Intl.NumberFormat('ko-KR').format(Math.round(n))}원`;
+
+/**
+ * 예상 월지출이 월간 목표를 넘으면 경고 문구를 돌려준다 (목표가 없거나 넘지 않으면 null).
+ * 이번 달이면 '지금 속도' 기준 예상, 지난 달·다음 달이면 예상이 곧 합계이므로 합계 기준으로 말한다.
+ */
+export function goalWarning(
+  s: Pick<MonthSummary, 'total' | 'dailyAvg' | 'projected'>,
+  ym: string,
+  today: string,
+  goal: number | null,
+): GoalWarning | null {
+  if (!goal || goal <= 0) return null;
+  if (Math.round(s.projected) <= goal) return null;
+  if (ymOf(today) !== ym) {
+    return {
+      title: '목표 지출 초과',
+      lines: [`이 달 합계 ${w(s.total)}가 목표(${w(goal)})보다 ${w(s.total - goal)} 많습니다.`],
+    };
+  }
+  if (s.total > goal) {
+    return {
+      title: '이미 목표를 넘었습니다',
+      lines: [`합계 ${w(s.total)} / 목표 ${w(goal)}`, `목표보다 ${w(s.total - goal)} 많습니다.`],
+    };
+  }
+  return {
+    title: '목표 초과가 예상됩니다',
+    lines: [
+      `지금 속도로 쓰면 월말 예상 지출이 ${w(s.projected)}으로, 목표(${w(goal)})보다 ${w(s.projected - goal)} 많습니다.`,
+      `하루평균 ${w(s.dailyAvg)} 기준`,
+    ],
+  };
 }
