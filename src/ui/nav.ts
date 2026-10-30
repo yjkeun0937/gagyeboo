@@ -1,8 +1,9 @@
 import { signal } from '@preact/signals';
-import { EMPTY_FILTER, type Entry, type EntryFilter } from '../lib/types';
+import type { ListSort } from '../lib/calc';
+import { EMPTY_FILTER, type DefaultView, type Entry, type EntryFilter } from '../lib/types';
 
 export type Tab = 'history' | 'stats' | 'settings';
-export type SettingsPage = 'fixed' | 'lists' | 'goal' | 'display' | 'account' | 'data' | 'about';
+export type SettingsPage = 'fixed' | 'lists' | 'goal' | 'budget' | 'display' | 'account' | 'data' | 'about';
 export type ListsTab = 'users' | 'payMethods' | 'payDetails' | 'categories';
 
 function load<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
@@ -37,6 +38,13 @@ export const filter = signal<EntryFilter>({ ...EMPTY_FILTER });
 export const searchOpen = signal(false);
 export const searchAllPeriod = signal(false);
 export const chipsOpen = signal(false);
+
+/** 사용 내역을 날짜 그룹이 아닌 열 기준으로 한 줄씩 정렬할 때. null이면 날짜별 그룹(설정의 날짜 정렬) */
+export const listSort = signal<ListSort | null>(null);
+/** 이번에 연 화면에서 고른 보기. null이면 설정의 기본 보기를 따른다 */
+export const historyView = signal<DefaultView | null>(null);
+/** 캘린더에서 고른 날짜 */
+export const calDate = signal<string | null>(null);
 
 export type SheetState =
   | { mode: 'add'; date?: string }

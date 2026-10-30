@@ -12,6 +12,7 @@ import {
   yearNum,
   ymOf,
 } from '../lib/dates';
+import { budgetState } from '../lib/calc';
 import { won } from '../lib/format';
 import { monthStats, rangeStats, yearStats, type MonthStats, type RangeFilter, type Slice } from '../lib/stats';
 import { EMPTY_FILTER, type ID } from '../lib/types';
@@ -177,6 +178,52 @@ function CategoryCard({ s }: { s: MonthStats }) {
           />
         </div>
       </div>
+    </Card>
+  );
+}
+
+/** 분류별 예산(월 한도)이 정해진 분류의 사용 현황. 한도가 하나도 없으면 나타나지 않는다 */
+function BudgetCard({ s }: { s: MonthStats }) {
+  const rows = categoriesSorted.value
+    .filter((c) => (c.budget ?? 0) > 0)
+    .map((c) => ({ c, st: budgetState(s.byCategory.find((x) => x.key === c.id)?.total ?? 0, c.budget)! }));
+  if (!rows.length) return null;
+  const overCount = rows.filter((r) => r.st.level === 'over').length;
+  return (
+    <Card
+      title="예산 대비 사용"
+      note={overCount ? `${overCount}개 분류가 한도를 넘었습니다.` : '설정 > 분류별 예산에서 한도를 바꿀 수 있습니다.'}
+    >
+      <ul class="budget-stat">
+        {rows.map(({ c, st }) => (
+          <li key={c.id} class={`lv-${st.level}`}>
+            <button type="button" class="budget-stat-row" onClick={() => gotoHistory(s.ym, { categoryId: c.id })}>
+              <span class="bs-name">
+                <CategoryDot color={c.color} />
+                {c.name}
+                {st.level === 'over' ? (
+                  <span class="bud-flag" aria-hidden="true">
+                    !
+                  </span>
+                ) : null}
+              </span>
+              <span class="bs-nums num">
+                {wonText(st.spent)} / {wonText(st.budget)} · {Math.round(st.percent)}%
+              </span>
+              <span class="bud-meter-inline" aria-hidden="true">
+                <i style={{ width: `${Math.min(100, st.percent)}%` }} />
+              </span>
+              <span class="bs-msg">
+                {st.level === 'over'
+                  ? `한도 초과 ${wonText(st.over)}`
+                  : st.level === 'warn'
+                    ? `거의 다 썼습니다 (남은 ${wonText(st.remaining)})`
+                    : `남은 한도 ${wonText(st.remaining)}`}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }
@@ -462,6 +509,7 @@ function MonthlyStats() {
           />
           <div class="stat-grid">
             <CategoryCard s={s} />
+            <BudgetCard s={s} />
             <UserCard s={s} />
             <PayCard s={s} />
             <DeltaCard s={s} />

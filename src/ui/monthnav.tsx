@@ -58,7 +58,7 @@ export function MonthNav() {
   const go = (n: number) => (viewMonth.value = addMonths(viewMonth.value, n));
   return (
     <div class="monthnav">
-      <button type="button" class="icon-btn" aria-label="전년" onClick={() => go(-12)}>
+      <button type="button" class="icon-btn yr-btn" aria-label="전년" onClick={() => go(-12)}>
         <Ui name="ChevronsLeft" />
       </button>
       <button type="button" class="icon-btn" aria-label="전월" onClick={() => go(-1)}>
@@ -76,7 +76,7 @@ export function MonthNav() {
       <button type="button" class="icon-btn" aria-label="다음 달" onClick={() => go(1)}>
         <Ui name="ChevronRight" />
       </button>
-      <button type="button" class="icon-btn" aria-label="다음 해" onClick={() => go(12)}>
+      <button type="button" class="icon-btn yr-btn" aria-label="다음 해" onClick={() => go(12)}>
         <Ui name="ChevronsRight" />
       </button>
       {picker ? <MonthPicker onClose={() => setPicker(false)} /> : null}

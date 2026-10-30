@@ -17,6 +17,7 @@ import {
 import { viewport } from './ui/viewport';
 import { ConfirmLayer, PopoverLayer, ToastLayer } from './ui/overlay';
 import { Ui } from './ui/icons';
+import { applyUpdate, updateReady } from './pwa';
 import { AccountChip, AccountModal, LogoutDialog } from './views/AccountUi';
 import { HistoryView } from './views/HistoryView';
 import { EntrySheet } from './views/EntrySheet';
@@ -38,22 +39,6 @@ function useAppearance() {
     else root.setAttribute('data-theme', s.theme);
     root.style.fontSize = `${s.fontScale}%`;
   }, [s.theme, s.fontScale]);
-}
-
-function useShortcuts() {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement | null;
-      const typing = el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
-      if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
-      if ((e.key === 'n' || e.key === 'N') && !sheet.value && viewport.value !== 'mobile') {
-        e.preventDefault();
-        openAdd();
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, []);
 }
 
 function TopPanel() {
@@ -159,9 +144,24 @@ function StaleBanner() {
   );
 }
 
+/** 새 버전이 배포되어 이 기기에 받아 두었을 때 */
+function UpdateBanner() {
+  if (!updateReady.value) return null;
+  return (
+    <div class="stale-banner update-banner" role="status">
+      <span>
+        가계부 새 버전이 있습니다. 새로고침하면 바뀝니다.
+        {sheet.value ? ' (입력창에 쓰던 내용은 먼저 저장해 주세요)' : ''}
+      </span>
+      <button type="button" class="btn small primary" onClick={applyUpdate}>
+        새로고침
+      </button>
+    </div>
+  );
+}
+
 export function App() {
   useAppearance();
-  useShortcuts();
   useFixedPrompt();
   if (!ready.value) return <BootScreen />;
   const vp = viewport.value;
@@ -169,6 +169,7 @@ export function App() {
   return (
     <div class="app">
       <StaleBanner />
+      <UpdateBanner />
       <TopPanel />
       <main class="page" id="main">
         <div class="page-inner">

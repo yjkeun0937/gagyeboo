@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { budgetState, summarize } from '../lib/calc';
 import { digitsOnly, won } from '../lib/format';
-import type { FutureDisplay } from '../lib/types';
+import type { DefaultView, FutureDisplay } from '../lib/types';
 import { clearSample, hasSample, loadSample } from '../lib/sample';
-import { todayKST } from '../lib/dates';
+import { todayKST, ymOf } from '../lib/dates';
 import {
+  categoriesSorted,
   entries,
   exportAll,
   findLastImport,
@@ -11,14 +13,17 @@ import {
   type LastImport,
   importAll,
   resetAll,
+  save,
   settings,
+  today,
   showToast,
   updateSettings,
   validateBackup,
 } from '../store/store';
 import { SCHEMA_VERSION } from '../store/db';
-import { Ui } from '../ui/icons';
-import { settingsPage, type SettingsPage } from '../ui/nav';
+import { CategoryDot, Ui } from '../ui/icons';
+import { installApp, installPrompt, installed, isStandalone } from '../pwa';
+import { historyView, settingsPage, type SettingsPage } from '../ui/nav';
 import { askConfirm } from '../ui/overlay';
 import { viewport } from '../ui/viewport';
 import { FixedPage } from './FixedPage';
@@ -27,10 +32,11 @@ import { ListsManager } from './ListsManager';
 import { ExportDialog } from './ExportDialog';
 import { ImportWizard } from './ImportWizard';
 
-const MENU: { id: SettingsPage; label: string; desc: string; icon: 'CalendarDays' | 'ListChecks' | 'Palette' | 'Cloud' | 'Database' | 'Info' | 'Target' }[] = [
+const MENU: { id: SettingsPage; label: string; desc: string; icon: 'CalendarDays' | 'ListChecks' | 'Palette' | 'Cloud' | 'Database' | 'Info' | 'Target' | 'Gauge' }[] = [
   { id: 'fixed', label: '고정지출', desc: '매달 반복되는 지출 등록', icon: 'CalendarDays' },
   { id: 'lists', label: '목록 관리', desc: '사용자·지불수단·결제상세·분류', icon: 'ListChecks' },
   { id: 'goal', label: '월간 목표', desc: '월간 목표 지출액과 초과 경고', icon: 'Target' },
+  { id: 'budget', label: '분류별 예산', desc: '분류마다 한 달 한도와 진행률', icon: 'Gauge' },
   { id: 'display', label: '화면', desc: '테마·아이콘 표시·글자 크기', icon: 'Palette' },
   { id: 'account', label: '계정·동기화', desc: '구글 로그인과 기기 간 동기화', icon: 'Cloud' },
   { id: 'data', label: '데이터 관리', desc: '엑셀 가져오기·내보내기, 백업·복원, 초기화', icon: 'Database' },
@@ -124,6 +130,93 @@ function GoalPage() {
   );
 }
 
+function BudgetRow({ id, spent }: { id: string; spent: number }) {
+  const c = categoriesSorted.value.find((x) => x.id === id);
+  const [v, setV] = useState(c?.budget ? String(c.budget) : '');
+  // 다른 기기에서 동기화로 값이 바뀌면 입력란도 따라간다
+  useEffect(() => {
+    setV(c?.budget ? String(c.budget) : '');
+  }, [c?.budget]);
+  if (!c) return null;
+  const n = Number(v || 0);
+  const commit = async () => {
+    const next = n > 0 ? n : null;
+    if ((c.budget ?? null) === next) return;
+    await save('categories', { ...c, budget: next });
+    showToast(next ? `${c.name} 예산을 ${won(next)}원으로 정했습니다` : `${c.name} 예산을 해제했습니다`);
+  };
+  const bs = budgetState(spent, n > 0 ? n : null);
+  return (
+    <li class="budget-row">
+      <label class="budget-name" for={`bud-${c.id}`}>
+        <CategoryDot color={c.color} />
+        {c.name}
+      </label>
+      <input
+        id={`bud-${c.id}`}
+        class="input amount-input num"
+        inputMode="numeric"
+        placeholder="한도 없음"
+        value={v ? won(n) : ''}
+        onInput={(e) => setV(digitsOnly(e.currentTarget.value).slice(0, 10).replace(/^0+(?=\d)/, ''))}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+        }}
+      />
+      <span class="unit">원</span>
+      <div class={`budget-use ${bs ? `lv-${bs.level}` : ''}`}>
+        {bs ? (
+          <>
+            <span class="bud-meter-inline" aria-hidden="true">
+              <i style={{ width: `${Math.min(100, bs.percent)}%` }} />
+            </span>
+            <small>
+              이번 달 {won(spent)}원 · {Math.round(bs.percent)}%
+              {bs.level === 'over' ? ` · ${won(bs.over)}원 초과` : ''}
+            </small>
+          </>
+        ) : (
+          <small class="muted">이번 달 {won(spent)}원</small>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function BudgetPage() {
+  const ym = ymOf(today.value);
+  const s = summarize(entries.value.filter((e) => e.date.startsWith(ym)), ym, today.value);
+  const cats = categoriesSorted.value;
+  const total = cats.reduce((a, c) => a + (c.budget ?? 0), 0);
+  const goal = settings.value.monthlyGoal;
+  return (
+    <div class="settings-form">
+      <section class="card-block">
+        <h3>분류별 한 달 예산</h3>
+        <p class="hint">
+          분류마다 한 달에 쓰려는 금액의 <b>한도</b>를 정합니다. 모든 달에 같은 금액이 적용되고, 남은 돈을 다음 달로 넘기지는 않습니다.
+          사용 내역의 분류 칩과 통계의 <b>예산 대비 사용</b>에 진행률이 나타나며, 한도를 넘으면 빨간 느낌표가 붙습니다.
+          비워 두면 그 분류는 한도가 없습니다. 보류 내역은 사용액에서 빠지고 예정 내역은 포함됩니다.
+        </p>
+        {cats.length ? (
+          <ul class="budget-list">
+            {cats.map((c) => (
+              <BudgetRow key={c.id} id={c.id} spent={s.byCategory.get(c.id) ?? 0} />
+            ))}
+          </ul>
+        ) : (
+          <p class="hint">분류가 아직 없습니다. 설정 &gt; 목록 관리에서 분류를 먼저 등록해 주세요.</p>
+        )}
+        <p class="hint">
+          한도 합계: <b>{total ? `${won(total)}원` : '없음'}</b>
+          {goal && total ? ` · 월간 목표 ${won(goal)}원과 ${total > goal ? '비교해 ' + won(total - goal) + '원 많습니다' : '비교해 ' + won(goal - total) + '원 적습니다'}. 두 값이 달라도 괜찮습니다.` : ''}
+        </p>
+      </section>
+    </div>
+  );
+}
+
 function DisplayPage() {
   const s = settings.value;
   return (
@@ -154,6 +247,22 @@ function DisplayPage() {
           onChange={(v) => updateSettings({ iconMode: v })}
         />
         <p class="hint">자동: 휴대폰은 아이콘만(누르면 이름 표시), 태블릿은 아이콘 + 짧은 이름, 컴퓨터는 아이콘 + 이름.</p>
+      </div>
+      <div class="field">
+        <span class="label">사용 내역 기본 보기</span>
+        <Segmented<DefaultView>
+          label="기본 보기"
+          value={s.defaultView}
+          options={[
+            { value: 'list', label: '목록' },
+            { value: 'calendar', label: '캘린더' },
+          ]}
+          onChange={(v) => {
+            historyView.value = null;
+            void updateSettings({ defaultView: v });
+          }}
+        />
+        <p class="hint">앱을 열 때 처음 보이는 모양입니다. 사용 내역 위쪽의 버튼으로 언제든 바꿔 볼 수 있습니다. 이 설정은 기기마다 따로 저장됩니다.</p>
       </div>
       <div class="field">
         <span class="label">오늘 이후 항목 (보류·예정)</span>
@@ -405,14 +514,58 @@ function AboutPage() {
         <h3>가계부</h3>
         <dl class="kv">
           <dt>릴리스</dt>
-          <dd>R4 (엑셀 가져오기·내보내기)</dd>
+          <dd>R5 (검색·캘린더·분류별 예산·앱 설치)</dd>
           <dt>저장 위치</dt>
           <dd>이 기기의 브라우저(IndexedDB). 구글 로그인을 하면 내 구글 드라이브의 앱 전용 폴더에도 저장됩니다.</dd>
           <dt>데이터 형식</dt>
           <dd>v{SCHEMA_VERSION}</dd>
         </dl>
       </section>
+      <InstallSection />
     </div>
+  );
+}
+
+/** 앱으로 설치(홈 화면·바탕화면)와 오프라인 사용 안내 */
+function InstallSection() {
+  const standalone = isStandalone() || installed.value;
+  const can = installPrompt.value != null;
+  return (
+    <section class="card-block">
+      <h3>앱으로 설치·오프라인</h3>
+      <p class="hint">
+        설치하면 홈 화면(휴대폰)이나 바탕화면·시작 메뉴(컴퓨터)에서 주소창 없이 앱처럼 열립니다. 설치하지 않아도 이 페이지를 한 번
+        열어 두면 앱 파일이 이 기기에 저장되어, 인터넷이 없어도 열리고 입력할 수 있습니다. 구글 로그인 동기화는 연결이 돌아오면
+        이어집니다.
+      </p>
+      {standalone ? (
+        <p class="hint">
+          <b>설치된 앱으로 실행 중입니다.</b>
+        </p>
+      ) : can ? (
+        <div class="btn-row">
+          <button
+            type="button"
+            class="btn primary"
+            onClick={async () => {
+              const r = await installApp();
+              if (r === 'accepted') showToast('앱으로 설치했습니다');
+            }}
+          >
+            <Ui name="Download" size={18} />앱으로 설치
+          </button>
+        </div>
+      ) : (
+        <p class="hint">
+          이 브라우저에서는 설치 버튼을 바로 띄울 수 없습니다. 크롬 오른쪽 위 메뉴(⋮)에서 <b>앱 설치</b> 또는 <b>홈 화면에 추가</b>를
+          고르세요. 이미 설치했다면 이 안내가 보이지 않는 것이 정상일 수 있습니다.
+        </p>
+      )}
+      <p class="hint">
+        설치한 앱과 브라우저 탭은 보통 같은 저장소를 쓰지만, 기기에 따라 따로 저장되어 내용이 달라 보이면 두 곳 모두 구글 로그인으로
+        동기화하면 같아집니다. 새 버전이 나오면 화면 위쪽에 안내가 뜨고, <b>새로고침</b>을 누르면 바뀝니다.
+      </p>
+    </section>
   );
 }
 
@@ -422,6 +575,8 @@ function Page({ id }: { id: SettingsPage }) {
       return <FixedPage />;
     case 'goal':
       return <GoalPage />;
+    case 'budget':
+      return <BudgetPage />;
     case 'lists':
       return <ListsManager />;
     case 'display':

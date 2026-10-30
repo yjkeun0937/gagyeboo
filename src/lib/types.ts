@@ -35,6 +35,8 @@ export interface Category extends Base {
   icon?: string;
   order: number;
   hidden?: boolean;
+  /** 월 예산 한도(원). 없으면 한도 없음. 모든 달에 같은 금액이 적용된다 */
+  budget?: number | null;
 }
 
 export interface User extends Base {
@@ -73,6 +75,8 @@ export type IconModeSetting = 'auto' | 'full' | 'icon';
 export type DateSort = 'desc' | 'asc';
 /** 오늘 이후([보류]·[예정]) 항목의 목록 표시: 모두 / 건수만 / 표시 안 함 */
 export type FutureDisplay = 'all' | 'count' | 'hide';
+/** 사용 내역 화면의 기본 보기 */
+export type DefaultView = 'list' | 'calendar';
 
 export interface AppSettings {
   theme: ThemeSetting;
@@ -82,6 +86,7 @@ export interface AppSettings {
   /** 월간 목표 지출액(원). null이면 목표 없음 */
   monthlyGoal: number | null;
   futureDisplay: FutureDisplay;
+  defaultView: DefaultView;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -91,6 +96,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   dateSort: 'desc',
   monthlyGoal: null,
   futureDisplay: 'all',
+  defaultView: 'list',
 };
 
 export type TableName =
@@ -144,6 +150,12 @@ export interface EntryFilter {
   includeGroups: boolean;
   /** [예상] 금액 미확정 내역만 */
   estimateOnly: boolean;
+  /** 금액 범위 (원, 양끝 포함). null이면 제한 없음 */
+  minAmount: number | null;
+  maxAmount: number | null;
+  /** 날짜 범위 YYYY-MM-DD (양끝 포함). 전체 기간 검색에서 쓴다 */
+  dateFrom: string | null;
+  dateTo: string | null;
 }
 
 export const EMPTY_FILTER: EntryFilter = {
@@ -154,4 +166,8 @@ export const EMPTY_FILTER: EntryFilter = {
   payDetailId: null,
   includeGroups: false,
   estimateOnly: false,
+  minAmount: null,
+  maxAmount: null,
+  dateFrom: null,
+  dateTo: null,
 };

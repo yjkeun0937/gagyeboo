@@ -8,7 +8,11 @@ import './styles/app.css';
 import { App } from './app';
 import { initStore, ready, refreshToday } from './store/store';
 import { initSync } from './sync/controller';
+import { installKeyboardScroll } from './ui/keyboard';
+import { registerServiceWorker } from './pwa';
 
+installKeyboardScroll();
+registerServiceWorker();
 render(<App />, document.getElementById('app')!);
 
 void initStore().then(() => (ready.value ? initSync() : undefined));

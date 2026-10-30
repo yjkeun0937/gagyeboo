@@ -11,5 +11,5 @@ export {
   Plus, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, ChevronUp, Search, X,
   Settings, ChartColumn, ReceiptText, Eye, EyeOff, Trash2, Copy, Pencil, ArrowUp, ArrowDown, Check,
   Cloud, CloudOff, Info, Download, Upload, TriangleAlert, Undo2, ListChecks, Database, Palette,
-  Sliders, CalendarDays, Target, Repeat, CircleAlert, BellRing, ArrowDownUp, Filter, RefreshCw, LogIn, LogOut, ExternalLink,
+  Sliders, List, Gauge, CalendarDays, Target, Repeat, CircleAlert, BellRing, ArrowDownUp, Filter, RefreshCw, LogIn, LogOut, ExternalLink,
 } from 'lucide-preact';

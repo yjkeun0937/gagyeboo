@@ -116,7 +116,11 @@ export function isFilterActive(f: EntryFilter): boolean {
     f.userId ||
     f.payMethodId ||
     f.payDetailId ||
-    f.estimateOnly
+    f.estimateOnly ||
+    f.minAmount != null ||
+    f.maxAmount != null ||
+    f.dateFrom ||
+    f.dateTo
   );
 }
 
@@ -132,6 +136,10 @@ export function filterEntries(
     if (f.categoryId && e.category !== f.categoryId) return false;
     if (f.payMethodId && e.payMethod !== f.payMethodId) return false;
     if (f.payDetailId && e.payDetail !== f.payDetailId) return false;
+    if (f.minAmount != null && e.amount < f.minAmount) return false;
+    if (f.maxAmount != null && e.amount > f.maxAmount) return false;
+    if (f.dateFrom && e.date < f.dateFrom) return false;
+    if (f.dateTo && e.date > f.dateTo) return false;
     if (f.userId) {
       if (f.userId === 'none') {
         if (e.user != null) return false;
@@ -221,5 +229,65 @@ export function goalWarning(
       `지금 속도로 쓰면 월말 예상 지출이 ${w(s.projected)}으로, 목표(${w(goal)})보다 ${w(s.projected - goal)} 많습니다.`,
       `하루평균 ${w(s.dailyAvg)} 기준`,
     ],
+  };
+}
+
+/* ───────── 열 정렬 (사용처·분류·금액) ───────── */
+
+export type SortKey = 'store' | 'cat' | 'amt';
+export interface ListSort {
+  key: SortKey;
+  dir: 'asc' | 'desc';
+}
+
+/**
+ * 날짜 그룹 없이 한 줄로 늘어놓는 정렬. 같은 값이면 날짜 → 입력 순서.
+ * catOrder: 분류 ID → 목록 순서 (분류 없음은 맨 뒤)
+ */
+export function sortEntries(list: Entry[], sort: ListSort, catOrder: Map<ID, number>): Entry[] {
+  const sign = sort.dir === 'asc' ? 1 : -1;
+  const val = (e: Entry): string | number => {
+    if (sort.key === 'amt') return e.amount;
+    if (sort.key === 'store') return (e.store || e.memo).trim();
+    return e.category ? (catOrder.get(e.category) ?? 9999) : 10000;
+  };
+  return [...list].sort((a, b) => {
+    const x = val(a);
+    const y = val(b);
+    let c = 0;
+    if (typeof x === 'number' && typeof y === 'number') c = x - y;
+    else c = String(x).localeCompare(String(y), 'ko');
+    if (c !== 0) return c * sign;
+    return -compareEntries(a, b); // 같은 값이면 최신 날짜 먼저
+  });
+}
+
+/* ───────── 분류별 예산 ───────── */
+
+export type BudgetLevel = 'ok' | 'warn' | 'over';
+
+export interface BudgetState {
+  spent: number;
+  budget: number;
+  /** 0~무제한. 100이면 한도와 같음 */
+  percent: number;
+  level: BudgetLevel;
+  /** 한도를 넘은 금액 (넘지 않았으면 0) */
+  over: number;
+  remaining: number;
+}
+
+/** 80% 이상이면 주의, 100%를 넘으면 초과. 한도가 없으면 null */
+export function budgetState(spent: number, budget: number | null | undefined): BudgetState | null {
+  if (!budget || budget <= 0) return null;
+  const percent = (spent / budget) * 100;
+  const level: BudgetLevel = spent > budget ? 'over' : percent >= 80 ? 'warn' : 'ok';
+  return {
+    spent,
+    budget,
+    percent,
+    level,
+    over: Math.max(0, spent - budget),
+    remaining: Math.max(0, budget - spent),
   };
 }

@@ -1,0 +1,17 @@
+{
+  "id": "./",
+  "name": "가계부",
+  "short_name": "가계부",
+  "description": "엑셀 가계부를 대신하는 가계부 웹앱. 데스크탑과 휴대폰에서 같은 내용을 입력하고 봅니다.",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F6F9FC",
+  "theme_color": "#2338A0",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

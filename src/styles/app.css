@@ -2655,3 +2655,491 @@ select.input {
     grid-template-columns: 1fr;
   }
 }
+
+/* ───────── R5: 검색·필터 고도화 ───────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.view-toggle {
+  flex: none;
+}
+.range-row,
+.recent-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.range-label,
+.recent-title {
+  flex: none;
+  width: 36px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ink-3);
+}
+.amount-filter {
+  flex: 1 1 110px;
+  width: auto;
+  min-width: 0;
+  text-align: right;
+}
+.date-filter {
+  flex: 1 1 140px;
+  width: auto;
+  min-width: 0;
+}
+.recent-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.recent-pick {
+  min-height: 32px;
+  padding: 0 4px 0 10px;
+  font-size: 0.85rem;
+}
+.recent-x {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  min-height: 32px;
+  color: var(--ink-3);
+}
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-3);
+}
+mark {
+  padding: 0 1px;
+  color: inherit;
+  background: color-mix(in srgb, var(--amber) 32%, transparent);
+  border-radius: 2px;
+}
+.sort-head.is-active {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.sort-btn {
+  position: relative;
+}
+.sort-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  font-size: 16px;
+  cursor: pointer;
+}
+.card-date {
+  flex: none;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+/* 분류별 예산 */
+.sum-chip.has-budget {
+  position: relative;
+  overflow: hidden;
+  padding-bottom: 3px;
+}
+.bud-pct {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--ink-3);
+}
+.lv-warn .bud-pct {
+  color: var(--amber);
+}
+.lv-over .bud-pct {
+  color: var(--danger);
+}
+.bud-flag {
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: #fff;
+  background: var(--danger);
+  border-radius: 50%;
+}
+[data-theme='dark'] .bud-flag {
+  color: #1a0f0e;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .bud-flag {
+    color: #1a0f0e;
+  }
+}
+.bud-meter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--line);
+}
+.bud-meter i {
+  display: block;
+  height: 100%;
+  background: var(--good);
+}
+.lv-warn .bud-meter i {
+  background: var(--amber);
+}
+.lv-over .bud-meter i {
+  background: var(--danger);
+}
+
+/* ───────── R5: 캘린더 ───────── */
+.cal-wrap {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+@media (min-width: 1025px) {
+  .cal-wrap {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+}
+.cal,
+.cal-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.cal {
+  padding: 10px;
+}
+.cal-head,
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+.cal-head {
+  margin-bottom: 4px;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ink-3);
+}
+.cal-head .sun,
+.cal-cell.sun .cal-day {
+  color: var(--sun);
+}
+.cal-head .sat,
+.cal-cell.sat .cal-day {
+  color: var(--sat);
+}
+.cal-cell,
+.cal-blank {
+  min-height: 66px;
+}
+.cal-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 4px 5px;
+  text-align: left;
+  background: color-mix(in srgb, var(--primary) var(--heat, 0%), var(--surface));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.cal-cell:hover {
+  border-color: var(--primary);
+}
+.cal-cell.is-today {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+.cal-cell.is-selected {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
+.cal-cell.is-future {
+  border-style: dashed;
+}
+.cal-day {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.cal-total {
+  margin-top: auto;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--ink);
+}
+.cal-flag {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 0 4px;
+  font-size: 0.64rem;
+  line-height: 1.4;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 999px;
+  background: var(--surface);
+}
+.cal-flag.is-pending {
+  color: var(--amber);
+  border-color: var(--amber);
+  background: var(--amber-soft);
+}
+.cal-dots {
+  display: flex;
+  justify-content: flex-end;
+  gap: 3px;
+  min-height: 7px;
+}
+.cal-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.cal-foot {
+  margin: 10px 2px 0;
+  font-size: 0.82rem;
+  color: var(--ink-3);
+}
+.cal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+.cal-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 8px;
+  font-size: 1.05rem;
+  border-bottom: 1px solid var(--primary);
+}
+.cal-items {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.cal-none {
+  margin: 4px 0;
+  color: var(--ink-3);
+}
+@media (max-width: 640px) {
+  .cal {
+    padding: 6px;
+  }
+  .cal-head,
+  .cal-grid {
+    gap: 2px;
+  }
+  .cal-cell,
+  .cal-blank {
+    min-height: 58px;
+  }
+  .cal-cell {
+    padding: 3px;
+  }
+  .cal-total {
+    font-size: 0.7rem;
+  }
+  .cal-flag {
+    font-size: 0.58rem;
+    padding: 0 3px;
+  }
+  .cal-dots i {
+    width: 6px;
+    height: 6px;
+  }
+}
+
+/* 분류별 예산 설정 */
+.budget-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.budget-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(120px, 160px) auto;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.budget-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+.budget-name .cat-dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.budget-row .amount-input {
+  text-align: right;
+}
+.budget-use {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 18px;
+}
+.bud-meter-inline {
+  flex: 0 1 140px;
+  height: 6px;
+  min-width: 60px;
+  overflow: hidden;
+  background: var(--line);
+  border-radius: 3px;
+}
+.bud-meter-inline i {
+  display: block;
+  height: 100%;
+  background: var(--good);
+}
+.budget-use.lv-warn .bud-meter-inline i {
+  background: var(--amber);
+}
+.budget-use.lv-over .bud-meter-inline i {
+  background: var(--danger);
+}
+.budget-use.lv-over small {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.budget-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.budget-stat-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  width: 100%;
+  padding: 8px 4px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+}
+.budget-stat-row:hover {
+  background: var(--surface-2);
+}
+.bs-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+.bs-nums {
+  font-size: 0.88rem;
+  color: var(--ink-2);
+}
+.budget-stat-row .bud-meter-inline {
+  grid-column: 1 / -1;
+  flex: none;
+  height: 8px;
+}
+.bs-msg {
+  grid-column: 1 / -1;
+  font-size: 0.8rem;
+  color: var(--ink-3);
+}
+.budget-stat .lv-warn .bud-meter-inline i {
+  background: var(--amber);
+}
+.budget-stat .lv-over .bud-meter-inline i {
+  background: var(--danger);
+}
+.budget-stat .lv-over .bs-msg {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* ───────── R5: 휴대폰 키보드 ───────── */
+/* 입력 중에는 스크롤 영역 아래에 여백을 두어, 입력란을 화면 맨 위까지 올릴 수 있게 한다 */
+html.kb-open .page,
+html.kb-open .sheet-body,
+html.kb-open .modal-body {
+  padding-bottom: 60dvh;
+}
+/* 둥둥 떠 있는 입력 버튼은 키보드가 열려 있는 동안 숨긴다 */
+html.kb-open .fab {
+  display: none;
+}
+
+/* 휴대폰: 월 이동 줄이 좁아서 전년·다음 해 버튼은 숨긴다 (연·월 선택 팝업에서 해를 옮길 수 있다) */
+@media (max-width: 640px) {
+  .monthnav .yr-btn {
+    display: none;
+  }
+  .month-picker {
+    left: 0;
+  }
+}
+.cal-panel {
+  scroll-margin-top: calc(var(--top-h) + var(--safe-t) + 8px);
+}
+.budget-row .amount-input {
+  font-size: 1.05rem;
+  min-height: 44px;
+}
+
+/* ───────── R5: 휴대폰 터치 영역(44px 이상) ───────── */
+.badge-btn,
+.account-chip {
+  position: relative;
+}
+@media (pointer: coarse) {
+  .badge-btn::after,
+  .account-chip::after {
+    content: '';
+    position: absolute;
+    inset: -5px;
+  }
+  .btn.small {
+    min-height: 44px;
+  }
+}
+
+.update-banner {
+  background: var(--primary-soft);
+  border-bottom-color: var(--primary);
+}

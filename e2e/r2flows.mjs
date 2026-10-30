@@ -31,8 +31,13 @@ async function run(name, vp) {
   let d = await groupDates();
   console.log('  dates sample', d.slice(0, 4));
   ok(d.length > 3 && d[0] > d[d.length - 1], '기본 정렬 = 날짜 내림차순');
-  const sortBtn = mobile ? page.locator('.breakdown-bar .sort-btn') : page.locator('.sort-head');
-  await sortBtn.click(); await page.waitForTimeout(250);
+  // 데스크탑: 날짜 열 머리글 클릭, 휴대폰: 정렬 선택 상자
+  const flipSort = async (toAsc) => {
+    if (mobile) await page.locator('.breakdown-bar .sort-select').selectOption(toAsc ? 'date-asc' : 'date-desc');
+    else await page.locator('.c-date .sort-head').click();
+    await page.waitForTimeout(250);
+  };
+  await flipSort(true);
   d = await groupDates();
   ok(d[0] < d[d.length - 1], '정렬 버튼 → 오름차순');
   await page.reload(); await page.waitForSelector('.ledger, .cards'); await page.waitForTimeout(400);
@@ -42,7 +47,7 @@ async function run(name, vp) {
   ok((await page.locator('.alert-chip.is-warn').count()) === 1, '닫아도 알림 칩은 남음');
   d = await groupDates();
   ok(d[0] < d[d.length - 1], '정렬 선택이 새로고침 후에도 유지');
-  await (mobile ? page.locator('.breakdown-bar .sort-btn') : page.locator('.sort-head')).click(); await page.waitForTimeout(250);
+  await flipSort(false);
   d = await groupDates();
   ok(d[0] > d[d.length - 1], '다시 눌러 내림차순 복귀');
 
