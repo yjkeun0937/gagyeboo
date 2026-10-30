@@ -118,6 +118,43 @@ export function ToastLayer() {
   );
 }
 
+/* ───────── 경고 팝업: 누르면 바로 사라지고, 두어도 잠시 뒤 사라진다 ───────── */
+
+interface WarningState {
+  message: string;
+  seq: number;
+}
+export const warning = signal<WarningState | null>(null);
+let warnSeq = 0;
+/** 입력 창 위에 뜨는 경고. 2.8초 뒤 자동으로 사라진다 */
+export const WARNING_MS = 2800;
+
+export function showWarning(message: string) {
+  warning.value = { message, seq: ++warnSeq };
+}
+
+export function WarningLayer() {
+  const w = warning.value;
+  useEffect(() => {
+    if (!w) return;
+    const id = setTimeout(() => {
+      if (warning.value?.seq === w.seq) warning.value = null;
+    }, WARNING_MS);
+    return () => clearTimeout(id);
+  }, [w?.seq]);
+  if (!w) return null;
+  return (
+    <div class="warning-layer" role="presentation" onPointerDown={() => (warning.value = null)}>
+      <div class="warning-pop" role="alert" aria-live="assertive">
+        <span class="warning-icon" aria-hidden="true">
+          !
+        </span>
+        <span>{w.message}</span>
+      </div>
+    </div>
+  );
+}
+
 /* ───────── 대화상자 ───────── */
 
 export function Modal({

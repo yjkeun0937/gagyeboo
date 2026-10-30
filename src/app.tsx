@@ -15,7 +15,7 @@ import {
   type Tab,
 } from './ui/nav';
 import { viewport } from './ui/viewport';
-import { ConfirmLayer, PopoverLayer, ToastLayer } from './ui/overlay';
+import { ConfirmLayer, PopoverLayer, ToastLayer, WarningLayer } from './ui/overlay';
 import { Ui } from './ui/icons';
 import { applyUpdate, updateReady } from './pwa';
 import { AccountChip, AccountModal, LogoutDialog } from './views/AccountUi';
@@ -188,6 +188,7 @@ export function App() {
       <PopoverLayer />
       <ToastLayer />
       <ConfirmLayer />
+      <WarningLayer />
     </div>
   );
 }

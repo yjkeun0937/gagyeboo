@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'preact/hooks';
 import { suggestStores } from '../lib/calc';
 import { isValidYmd, ymOf } from '../lib/dates';
+import { amountErrorMessage, displayAmountText, parseAmount } from '../lib/amount';
 import { digitsOnly, won } from '../lib/format';
 import type { Entry, ID } from '../lib/types';
 import {
@@ -27,14 +28,15 @@ import {
 import { uid } from '../lib/format';
 import { CategoryDot, COLOR_CHOICES, PayGlyph, Ui, UserGlyph } from '../ui/icons';
 import { closeSheet, openCopy, sheet } from '../ui/nav';
-import { askConfirm, Sheet } from '../ui/overlay';
+import { askConfirm, Sheet, showWarning } from '../ui/overlay';
 
 interface Form {
   date: string;
   store: string;
   memo: string;
   category: ID | null;
-  amount: string; // 숫자만
+  /** 입력한 그대로의 글자. 숫자만이거나 500+1000, 100*5+200 같은 수식 */
+  amount: string;
   user: ID | null;
   payMethod: ID | null;
   payDetail: ID | null;
@@ -68,7 +70,7 @@ function initialForm(): { form: Form; entry?: Entry } {
         store: e.store,
         memo: e.memo,
         category: e.category,
-        amount: String(e.amount),
+        amount: String(Math.round(e.amount)),
         user: e.user,
         payMethod: e.payMethod,
         payDetail: e.payDetail,
@@ -390,19 +392,49 @@ export function EntrySheet() {
       store: hit.store,
       memo: f.memo || l.memo,
       category: f.category ?? l.category,
-      amount: f.amount || String(l.amount),
+      amount: f.amount || String(Math.round(l.amount)),
       user: f.user ?? l.user,
       payMethod: f.payMethod ?? l.payMethod,
       payDetail: f.payMethod ? f.payDetail : (l.payMethod ? l.payDetail : f.payDetail),
     }));
   };
 
-  const amountNum = Number(form.amount || 0);
+  const amountRef = useRef<HTMLInputElement>(null);
+  const memoRef = useRef<HTMLInputElement>(null);
+  /** 수정 중인 내역의 금액 글자를 건드리지 않았으면 원래 금액을 그대로 쓴다 (가져온 소수 금액 보호) */
+  const untouched = !!editing && form.amount === String(editing.amount);
+  const parsed = untouched ? { ok: true as const, value: editing.amount, isExpr: false } : parseAmount(form.amount);
+  const amountNum = parsed.ok ? parsed.value : 0;
+
+  /** + / × 버튼: 끝에 연산자를 붙인다 (이미 연산자로 끝나면 바꾼다) */
+  const insertOp = (op: '+' | '*') => {
+    const t = form.amount.replace(/\s/g, '');
+    if (!t) return amountRef.current?.focus();
+    set({ amount: /[+*]$/.test(t) ? t.slice(0, -1) + op : t + op, isEstimate: false });
+    amountRef.current?.focus();
+  };
+
+  /** +1,000 같은 빠른 버튼: 수식이 맞으면 그 결과에 더한다 */
+  const addQuick = (n: number) => {
+    if (!parsed.ok && parsed.reason !== 'empty') {
+      showWarning(amountErrorMessage(parsed.reason));
+      amountRef.current?.focus();
+      return;
+    }
+    set({ amount: String(Math.min(amountNum + n, 9_999_999_999)), isEstimate: false });
+  };
 
   const submit = async (keepOpen: boolean) => {
     if (busy) return;
     if (!isValidYmd(form.date)) return setError('날짜를 확인해 주세요');
     if (!form.store.trim() && !form.memo.trim()) return setError('사용처나 명세 중 하나는 적어 주세요');
+    if (!parsed.ok && parsed.reason !== 'empty') {
+      // 잘못된 수식: 인라인 문구 대신 잠깐 떴다 사라지는 경고 팝업
+      setError('');
+      showWarning(amountErrorMessage(parsed.reason));
+      amountRef.current?.focus();
+      return;
+    }
     if (!(amountNum > 0)) return setError('금액을 입력해 주세요');
     setError('');
 
@@ -440,17 +472,11 @@ export function EntrySheet() {
         await removeEntry(created.id);
       });
       if (keepOpen) {
-        const next: Form = {
-          ...form,
-          store: '',
-          memo: '',
-          category: null,
-          amount: '',
-          isEstimate: false,
-        };
+        // 명세와 금액만 비우고 날짜·사용처·분류·사용자·지불수단은 그대로 둔다
+        const next: Form = { ...form, memo: '', amount: '', isEstimate: false };
         initialJson.current = JSON.stringify(next);
         setForm(next);
-        setTimeout(() => storeRef.current?.focus(), 0);
+        setTimeout(() => memoRef.current?.focus(), 0);
       } else {
         closeSheet();
       }
@@ -581,6 +607,7 @@ export function EntrySheet() {
           <label for="f-memo">명세</label>
           <input
             id="f-memo"
+            ref={memoRef}
             class="input"
             type="text"
             value={form.memo}
@@ -588,6 +615,55 @@ export function EntrySheet() {
             placeholder="선택"
             onInput={(e) => set({ memo: e.currentTarget.value })}
           />
+        </div>
+
+        <div class="field">
+          <label for="f-amount">
+            금액 <small class="unit">원</small>
+            {form.isEstimate ? <span class="pill pill-estimate">예상</span> : null}
+          </label>
+          <input
+            id="f-amount"
+            ref={amountRef}
+            class="input amount-input num"
+            // 숫자 자판에도 + 가 있는 전화번호 자판. * 는 아래 버튼으로도 넣을 수 있다
+            inputMode="tel"
+            type="text"
+            value={displayAmountText(form.amount)}
+            placeholder="0"
+            autoComplete="off"
+            maxLength={40}
+            aria-describedby="f-amount-hint"
+            onInput={(e) => {
+              const raw = e.currentTarget.value.replace(/[×x]/g, '*');
+              // 숫자·쉼표·공백뿐이면 숫자로 정리하고, 연산자가 있으면 입력한 그대로 둔다
+              const text = /^[\d,\s]*$/.test(raw) ? digitsOnly(raw).slice(0, 10).replace(/^0+(?=\d)/, '') : raw;
+              set({ amount: text, isEstimate: false });
+            }}
+          />
+          <div class="amount-preview num" id="f-amount-hint" aria-live="polite">
+            {parsed.ok && parsed.isExpr && !untouched ? (
+              <>= {won(parsed.value)}원</>
+            ) : (
+              <span class="hint">더하기(+)·곱하기(*) 수식도 됩니다. 예: 500+1000, 100*5+200</span>
+            )}
+          </div>
+          <div class="quick">
+            <button type="button" class="btn small op" aria-label="더하기 기호 넣기" onClick={() => insertOp('+')}>
+              +
+            </button>
+            <button type="button" class="btn small op" aria-label="곱하기 기호 넣기" onClick={() => insertOp('*')}>
+              ×
+            </button>
+            {[1000, 10000, 50000].map((n) => (
+              <button key={n} type="button" class="btn small" onClick={() => addQuick(n)}>
+                +{won(n)}
+              </button>
+            ))}
+            <button type="button" class="btn small" onClick={() => set({ amount: '', isEstimate: false })}>
+              지우기
+            </button>
+          </div>
         </div>
 
         <div class="field">
@@ -604,41 +680,6 @@ export function EntrySheet() {
                   {c.name}
                 </Chip>
               ))}
-          </div>
-        </div>
-
-        <div class="field">
-          <label for="f-amount">
-            금액 <small class="unit">원</small>
-            {form.isEstimate ? <span class="pill pill-estimate">예상</span> : null}
-          </label>
-          <input
-            id="f-amount"
-            class="input amount-input num"
-            inputMode="numeric"
-            type="text"
-            value={form.amount ? won(Number(form.amount)) : ''}
-            placeholder="0"
-            autoComplete="off"
-            onInput={(e) => {
-              const d = digitsOnly(e.currentTarget.value).slice(0, 10);
-              set({ amount: d.replace(/^0+(?=\d)/, ''), isEstimate: false });
-            }}
-          />
-          <div class="quick">
-            {[1000, 10000, 50000].map((n) => (
-              <button
-                key={n}
-                type="button"
-                class="btn small"
-                onClick={() => set({ amount: String(amountNum + n), isEstimate: false })}
-              >
-                +{won(n)}
-              </button>
-            ))}
-            <button type="button" class="btn small" onClick={() => set({ amount: '' })}>
-              지우기
-            </button>
           </div>
         </div>
 

@@ -219,6 +219,119 @@ export function yearStats(all: Entry[], year: number, today: string, categoryOrd
   };
 }
 
+/* ───────── 전체 기간 ───────── */
+
+export interface AllYearRow {
+  year: number;
+  total: number;
+  /** 연간 탭과 같은 기준의 월평균 */
+  avg: number;
+  monthsCounted: number;
+  /** 그 해에 지출이 가장 많은 달(1~12), 없으면 0 */
+  peakMonth: number;
+  peakAmount: number;
+  /** 그 해에 지출이 가장 많은 분류 */
+  top: { category: ID | null; total: number } | null;
+}
+
+export interface AllCategoryRow {
+  category: ID | null;
+  /** years와 같은 순서의 연도별 합계 */
+  byYear: number[];
+  total: number;
+  /** 연평균 = 합계 ÷ 연도 수 */
+  avg: number;
+  share: number;
+}
+
+export interface AllPeriodStats {
+  /** 내역이 있는 첫 해부터 마지막 해까지(중간에 내역 없는 해 포함) 오름차순 */
+  years: number[];
+  yearRows: AllYearRow[];
+  catRows: AllCategoryRow[];
+  yearTotals: number[];
+  total: number;
+  monthsCounted: number;
+  /** 월평균 = 전체 합계 ÷ 각 해의 월평균 기준 월 수의 합 */
+  avg: number;
+  /** 모든 기간 중 지출이 가장 많은 달 */
+  peak: { ym: string; amount: number } | null;
+  /** 모든 기간 중 지출이 가장 많은 분류 */
+  top: { category: ID | null; total: number } | null;
+}
+
+/** 수집된 모든 내역(보류 제외)을 연도별로 모은다. 연간 탭의 계산(yearStats)을 해마다 재사용한다. */
+export function allPeriodStats(all: Entry[], today: string, categoryOrder: ID[]): AllPeriodStats {
+  const live = counted(all, today);
+  if (!live.length) {
+    return { years: [], yearRows: [], catRows: [], yearTotals: [], total: 0, monthsCounted: 0, avg: 0, peak: null, top: null };
+  }
+  let min = Infinity;
+  let max = -Infinity;
+  for (const e of live) {
+    const y = Number(e.date.slice(0, 4));
+    if (y < min) min = y;
+    if (y > max) max = y;
+  }
+  const years = Array.from({ length: max - min + 1 }, (_, i) => min + i);
+  const ys = years.map((y) => yearStats(live, y, today, categoryOrder));
+
+  const yearRows: AllYearRow[] = ys.map((y) => {
+    const best = y.rows.reduce<YearRow | null>((b, r) => (!b || r.total > b.total ? r : b), null);
+    return {
+      year: y.year,
+      total: y.total,
+      avg: y.avg,
+      monthsCounted: y.monthsCounted,
+      peakMonth: y.peakMonth,
+      peakAmount: y.peakMonth ? y.monthTotals[y.peakMonth - 1] : 0,
+      top: best && best.total > 0 ? { category: best.category, total: best.total } : null,
+    };
+  });
+
+  const byCat = new Map<ID | null, number[]>();
+  ys.forEach((y, i) => {
+    for (const r of y.rows) {
+      const arr = byCat.get(r.category) ?? years.map(() => 0);
+      arr[i] += r.total;
+      byCat.set(r.category, arr);
+    }
+  });
+  const total = ys.reduce((a, y) => a + y.total, 0);
+  const order = new Map(categoryOrder.map((id, i) => [id, i]));
+  const keys = [...byCat.keys()].sort((a, b) => {
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return (order.get(a) ?? 999) - (order.get(b) ?? 999);
+  });
+  const catRows: AllCategoryRow[] = keys.map((category) => {
+    const byYear = byCat.get(category)!;
+    const t = byYear.reduce((a, b) => a + b, 0);
+    return { category, byYear, total: t, avg: t / years.length, share: total ? t / total : 0 };
+  });
+
+  let peak: AllPeriodStats['peak'] = null;
+  ys.forEach((y) => {
+    y.monthTotals.forEach((v, m) => {
+      if (v > 0 && (!peak || v > peak.amount)) peak = { ym: `${y.year}-${pad(m + 1)}`, amount: v };
+    });
+  });
+  const topCat = catRows.reduce<AllCategoryRow | null>((b, r) => (!b || r.total > b.total ? r : b), null);
+  const monthsCounted = ys.reduce((a, y) => a + y.monthsCounted, 0);
+
+  return {
+    years,
+    yearRows,
+    catRows,
+    yearTotals: ys.map((y) => y.total),
+    total,
+    monthsCounted,
+    avg: total / Math.max(1, monthsCounted),
+    peak,
+    top: topCat && topCat.total > 0 ? { category: topCat.category, total: topCat.total } : null,
+  };
+}
+
 export interface RangeFilter {
   category: ID | 'none' | null;
   user: ID | 'none' | null;

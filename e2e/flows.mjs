@@ -51,7 +51,9 @@ async function run(name, vp) {
   // 저장 후 계속 입력
   await page.locator('.sheet-foot .btn', { hasText: '저장 후 계속 입력' }).click();
   await page.waitForTimeout(300);
-  ok(await page.locator('.sheet').count() === 1 && (await page.inputValue('#f-store')) === '', '저장 후 계속 입력: 시트 유지·사용처 비움');
+  ok(await page.locator('.sheet').count() === 1 && (await page.inputValue('#f-amount')) === '' && (await page.inputValue('#f-memo')) === '', '저장 후 계속 입력: 시트 유지·명세·금액 비움');
+  ok((await page.inputValue('#f-store')) === '테스트마트', '계속 입력: 사용처 유지');
+  ok((await page.locator('.sheet .chip[aria-pressed=true]', { hasText: '집밥' }).count()) === 1, '계속 입력: 분류 유지');
   ok((await page.locator('.sheet .chip[aria-pressed=true]', { hasText: '테스트인' }).count()) === 1, '계속 입력: 사용자 유지');
   await page.keyboard.press('Escape');
   await page.waitForSelector('.sheet', { state: 'detached' });

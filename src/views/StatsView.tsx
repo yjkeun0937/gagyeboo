@@ -14,7 +14,7 @@ import {
 } from '../lib/dates';
 import { budgetState } from '../lib/calc';
 import { won } from '../lib/format';
-import { monthStats, rangeStats, yearStats, type MonthStats, type RangeFilter, type Slice } from '../lib/stats';
+import { allPeriodStats, monthStats, rangeStats, yearStats, type MonthStats, type RangeFilter, type Slice } from '../lib/stats';
 import { EMPTY_FILTER, type ID } from '../lib/types';
 import {
   categoriesById,
@@ -38,11 +38,11 @@ import {
   type RankItem,
 } from '../ui/charts';
 import { CategoryDot, PayGlyph, Ui, UserGlyph } from '../ui/icons';
-import { filter, openEdit, setTab } from '../ui/nav';
+import { filter, historyView, openEdit, searchAllPeriod, searchOpen, setTab } from '../ui/nav';
 import { MonthNav } from '../ui/monthnav';
 import { Empty } from '../ui/parts';
 
-type StatsTab = 'month' | 'year' | 'range';
+type StatsTab = 'month' | 'year' | 'all' | 'range';
 const statsTab = signal<StatsTab>('month');
 const statsYear = signal(yearNum(viewMonth.value));
 const rangeStart = signal(`${todayKST().slice(0, 7)}-01`);
@@ -57,6 +57,7 @@ const rangeLimit = signal(50);
 const TAB_LABEL: Record<StatsTab, string> = {
   month: '월간',
   year: '연간',
+  all: '전체 기간',
   range: '기간 지정',
 };
 const GRAY = '#8A8F98';
@@ -78,7 +79,10 @@ function Card({ title, children, note }: { title: string; children: preact.Compo
 
 function Tiles({
   items,
+  wide,
 }: {
+  /** 4칸짜리 줄 */
+  wide?: boolean;
   items: {
     label: string;
     value: preact.ComponentChildren;
@@ -86,7 +90,7 @@ function Tiles({
   }[];
 }) {
   return (
-    <div class="tiles">
+    <div class={`tiles ${wide ? 'is-4' : ''}`}>
       {items.map((t) => (
         <div class="tile" key={t.label}>
           <span class="tile-label">{t.label}</span>
@@ -133,6 +137,21 @@ function sliceItems(
 function gotoHistory(ym: string, patch: Partial<typeof EMPTY_FILTER>) {
   viewMonth.value = ym;
   filter.value = { ...EMPTY_FILTER, ...patch };
+  setTab('history');
+}
+
+/** 전체 기간 표의 칸을 누르면: 그 해·그 분류의 내역을 전체 기간 검색으로 보여 준다 */
+function gotoYearHistory(year: number, category: ID | null) {
+  viewMonth.value = `${year}-12`;
+  filter.value = {
+    ...EMPTY_FILTER,
+    categoryId: category,
+    dateFrom: `${year}-01-01`,
+    dateTo: `${year}-12-31`,
+  };
+  historyView.value = 'list';
+  searchAllPeriod.value = true;
+  searchOpen.value = true;
   setTab('history');
 }
 
@@ -750,6 +769,173 @@ function YearlyStats() {
   );
 }
 
+/* ───────── 전체 기간 ───────── */
+
+function AllPeriodStats() {
+  const order = categoriesSorted.value.map((c) => c.id);
+  const a = useMemo(
+    () => allPeriodStats(entries.value, today.value, order),
+    [entries.value, today.value, categoriesSorted.value],
+  );
+  if (!a.years.length) return <Empty title="집계할 내역이 없습니다" />;
+  const first = a.years[0];
+  const last = a.years[a.years.length - 1];
+  const peakText = a.peak ? `${a.peak.ym.slice(0, 4)}년 ${monthNum(a.peak.ym)}월` : '-';
+
+  return (
+    <>
+      <Tiles
+        wide
+        items={[
+          {
+            label: '전체 합계',
+            value: <span class="num">{wonText(a.total)}</span>,
+            sub: first === last ? `${first}년` : `${first}년 ~ ${last}년`,
+          },
+          { label: '월평균', value: <span class="num">{wonText(a.avg)}</span>, sub: `${a.monthsCounted}개월 기준` },
+          {
+            label: '지출이 가장 많은 달',
+            value: peakText,
+            sub: a.peak ? wonText(a.peak.amount) : undefined,
+          },
+          {
+            label: '지출이 가장 많은 항목',
+            value: a.top ? (
+              <span class="tile-cat">
+                <CategoryDot color={catColor(a.top.category)} /> {catName(a.top.category)}
+              </span>
+            ) : (
+              '-'
+            ),
+            sub: a.top ? wonText(a.top.total) : undefined,
+          },
+        ]}
+      />
+      <Card
+        title="연도별 요약"
+        note="월평균은 지난 해는 12개월, 올해는 이번 달까지, 그 밖의 해는 내역이 있는 마지막 달까지로 나눕니다."
+      >
+        <div class="matrix-wrap">
+          <table class="matrix all-years">
+            <thead>
+              <tr>
+                <th>연도</th>
+                <th class="num">연 합계</th>
+                <th class="num">월평균</th>
+                <th class="num">지출이 가장 많은 달</th>
+                <th class="num">지출이 가장 많은 항목</th>
+              </tr>
+            </thead>
+            <tbody>
+              {a.yearRows.map((r) => (
+                <tr key={r.year}>
+                  <th scope="row">{r.year}년</th>
+                  <td class="num strong">{r.total ? won(r.total) : <span class="muted">·</span>}</td>
+                  <td class="num">{r.total ? won(r.avg) : <span class="muted">·</span>}</td>
+                  <td class="num">
+                    {r.peakMonth ? (
+                      <>
+                        {r.peakMonth}월 <small class="muted">{won(r.peakAmount)}</small>
+                      </>
+                    ) : (
+                      <span class="muted">·</span>
+                    )}
+                  </td>
+                  <td class="num">
+                    {r.top ? (
+                      <>
+                        <CategoryDot color={catColor(r.top.category)} /> {catName(r.top.category)}{' '}
+                        <small class="muted">{won(r.top.total)}</small>
+                      </>
+                    ) : (
+                      <span class="muted">·</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <Card
+        title="분류 × 연 지출표"
+        note="칸 뒤의 막대는 아래에서 위로 자라며, 그 분류에서 가장 많이 쓴 해가 칸 높이 전체입니다. 칸을 누르면 그 해·분류의 사용 내역으로 이동합니다."
+      >
+        <div class="matrix-wrap">
+          <table class="matrix all-cats">
+            <thead>
+              <tr>
+                <th>분류</th>
+                {a.years.map((y) => (
+                  <th key={y} class="num">
+                    {y}년
+                  </th>
+                ))}
+                <th class="num">합계</th>
+                <th class="num">연평균</th>
+                <th class="num">비율</th>
+              </tr>
+            </thead>
+            <tbody>
+              {a.catRows.map((r) => (
+                <tr key={String(r.category)}>
+                  <th scope="row">
+                    <CategoryDot color={catColor(r.category)} /> {catName(r.category)}
+                  </th>
+                  {r.byYear.map((v, i) => (
+                    <td
+                      key={i}
+                      class={`num ${v > 0 ? 'has-bar' : ''}`}
+                      style={
+                        v > 0 ? { '--h': `${Math.max(3, (v / rowMax(r.byYear)) * 100)}%`, '--c': catColor(r.category) } : undefined
+                      }
+                    >
+                      {v > 0 ? (
+                        <button
+                          type="button"
+                          class="cell-btn"
+                          onClick={() => gotoYearHistory(a.years[i], r.category)}
+                          aria-label={`${a.years[i]}년 ${catName(r.category)} ${wonText(v)}`}
+                        >
+                          {won(v)}
+                        </button>
+                      ) : (
+                        <span class="muted">·</span>
+                      )}
+                    </td>
+                  ))}
+                  <td class="num strong">{won(r.total)}</td>
+                  <td class="num">{won(r.avg)}</td>
+                  <td class="num">{Math.round(r.share * 1000) / 10}%</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th scope="row">연 합계</th>
+                {a.yearTotals.map((v, i) => (
+                  <td
+                    key={i}
+                    class={`num strong ${v > 0 ? 'has-bar' : ''}`}
+                    style={
+                      v > 0 ? { '--h': `${Math.max(3, (v / rowMax(a.yearTotals)) * 100)}%`, '--c': 'var(--primary)' } : undefined
+                    }
+                  >
+                    {v > 0 ? won(v) : <span class="muted">·</span>}
+                  </td>
+                ))}
+                <td class="num strong ledger-total">{won(a.total)}</td>
+                <td class="num strong">{won(a.total / a.years.length)}</td>
+                <td class="num">100%</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </Card>
+    </>
+  );
+}
+
 /* ───────── 기간 지정 ───────── */
 
 function RangeStats() {
@@ -971,7 +1157,15 @@ export function StatsView() {
         ))}
       </div>
       <p class="hint stats-note">[보류] 내역은 모든 통계에서 제외됩니다. [예정] 내역은 포함됩니다.</p>
-      {tab === 'month' ? <MonthlyStats /> : tab === 'year' ? <YearlyStats /> : <RangeStats />}
+      {tab === 'month' ? (
+        <MonthlyStats />
+      ) : tab === 'year' ? (
+        <YearlyStats />
+      ) : tab === 'all' ? (
+        <AllPeriodStats />
+      ) : (
+        <RangeStats />
+      )}
     </div>
   );
 }

@@ -581,6 +581,55 @@ input[type='date'].input {
   flex-wrap: wrap;
   gap: 8px;
 }
+.quick .op {
+  min-width: 44px;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.amount-preview {
+  min-height: 1.4em;
+  font-size: 0.9rem;
+  text-align: right;
+  color: var(--ink-2);
+}
+.amount-preview .hint {
+  font-weight: 400;
+}
+
+/* 경고 팝업: 화면 전체를 덮는 투명 막이라 어디를 눌러도 바로 닫힌다 */
+.warning-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  cursor: pointer;
+}
+.warning-pop {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(92vw, 420px);
+  padding: 14px 18px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: #fff;
+  background: var(--danger);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+.warning-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-weight: 800;
+  color: var(--danger);
+  background: #fff;
+  border-radius: 50%;
+}
 .suggest {
   position: absolute;
   top: 100%;
@@ -1673,6 +1722,19 @@ select.input {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
+.tiles.is-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 1024px) {
+  .tiles.is-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.tile-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .tile {
   display: flex;
   flex-direction: column;
@@ -2049,7 +2111,8 @@ select.input {
   }
 }
 @media (max-width: 640px) {
-  .tiles {
+  .tiles,
+  .tiles.is-4 {
     grid-template-columns: minmax(0, 1fr);
   }
   .tile {
@@ -2106,6 +2169,14 @@ select.input {
 }
 .matrix td.num {
   min-width: 68px;
+}
+/* 전체 기간 탭의 표는 열이 적어서 월 표만큼 넓지 않아도 된다 */
+.matrix.all-years,
+.matrix.all-cats {
+  min-width: 520px;
+}
+.matrix.all-years td.num {
+  white-space: nowrap;
 }
 .toast-undo {
   flex: none;
