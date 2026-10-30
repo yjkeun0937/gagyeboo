@@ -286,6 +286,26 @@ export function collectUsers(rows: Pick<ImportRow, 'user'>[], users: User[]): { 
   return { refs: [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ko')), blank };
 }
 
+/**
+ * 등록되지 않은 이름과 비슷한 기존 사용자 후보 (예: 파일의 「김바다」 ↔ 등록된 「바다」).
+ * 한쪽 이름이 다른 쪽에 들어 있고 짧은 쪽이 2글자 이상일 때만 제안하며, 자동으로 고르지는 않는다.
+ * 개인을 그룹보다 먼저, 이름이 긴(더 구체적인) 것을 먼저 둔다.
+ */
+export function similarUsers(name: string, users: User[], limit = 3): User[] {
+  const k = normName(name);
+  if (!k) return [];
+  const hit = users.filter((u) => {
+    if (u.hidden) return false;
+    const uk = normName(u.name);
+    if (!uk || uk === k) return false;
+    const [short, long] = uk.length <= k.length ? [uk, k] : [k, uk];
+    return short.length >= 2 && long.includes(short);
+  });
+  return hit
+    .sort((a, b) => (a.type === b.type ? 0 : a.type === 'person' ? -1 : 1) || b.name.length - a.name.length)
+    .slice(0, limit);
+}
+
 export type UserChoice =
   | { kind: 'person' }
   | { kind: 'group'; members: string[] }

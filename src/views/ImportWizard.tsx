@@ -17,6 +17,7 @@ import {
   type ImportRow,
   type RowFlag,
   type SheetInfo,
+  similarUsers,
   type UserChoice,
   type UserSetup,
 } from '../lib/importer';
@@ -475,7 +476,7 @@ function SheetsStep({
 const KIND_LABEL: { kind: 'person' | 'group' | 'link' | 'blank'; label: string; title: string }[] = [
   { kind: 'person', label: '개인', title: '새 개인으로 등록' },
   { kind: 'group', label: '그룹', title: '새 그룹으로 등록 (구성원 선택)' },
-  { kind: 'link', label: '기존에 연결', title: '이미 등록된 사용자와 같은 사람(별칭 등)' },
+  { kind: 'link', label: '기존 사용자로 변환', title: '이 이름의 내역을 이미 등록된 개인·그룹 이름으로 바꿔서 가져옵니다' },
   { kind: 'blank', label: '비움', title: '사용자 없이 가져오기' },
 ];
 
@@ -528,7 +529,7 @@ function UsersStep({
     <div class="wz-pane">
       <p>
         파일에서 사용자 <b>{info.refs.length}종</b>을 찾았고, 그중 <b>{todo.length}종</b>이 아직 등록되어 있지 않습니다.
-        개인인지 그룹인지는 앱이 추측하지 않으니 직접 골라 주세요.
+        개인인지 그룹인지는 앱이 추측하지 않으니 직접 골라 주세요. 「기존 사용자로 변환」을 고르면 그 이름의 내역 전체가 이미 등록된 개인·그룹의 이름으로 들어갑니다.
       </p>
 
       {todo.map((r) => {
@@ -558,6 +559,16 @@ function UsersStep({
                 </button>
               ))}
             </div>
+            {c?.kind !== 'link' && similarUsers(r.name, existing).length ? (
+              <div class="wz-similar">
+                <span class="hint">비슷한 이름이 이미 있습니다:</span>
+                {similarUsers(r.name, existing).map((u) => (
+                  <button key={u.id} type="button" class="chip" title={`${r.name}의 내역 전체를 「${u.name}」 이름으로 바꿔서 가져옵니다`} onClick={() => setChoice(r.key, { kind: 'link', id: u.id })}>
+                    변환 → {u.name}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {c?.kind === 'link' ? (
               <select class="input" value={c.id} aria-label={`${r.name}과 같은 사용자`} onChange={(e) => setChoice(r.key, { kind: 'link', id: e.currentTarget.value })}>
                 <option value="">연결할 사용자 고르기</option>

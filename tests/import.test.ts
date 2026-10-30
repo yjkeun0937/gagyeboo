@@ -7,6 +7,7 @@ import {
   listSheets,
   makePreview,
   readUserSheet,
+  similarUsers,
   validateUserSetup,
   type ImportRow,
   type PlanContext,
@@ -220,6 +221,18 @@ describe('미리보기·계획', () => {
     const p = makePreview(rows, ctxFor(emptyLookup({ users: [existing] }), userSetup({ choices: c, blankUserId: 'u_home' })), new Map());
     expect(p.plan.users).toHaveLength(0);
     expect(p.plan.entries.every((e) => e.user === 'u_home')).toBe(true);
+  });
+
+  it('비슷한 이름의 기존 사용자를 제안한다', () => {
+    const mk = (id: string, name: string, type: 'person' | 'group' = 'person', hidden = false): User => ({
+      id, name, type, memberIds: [], icon: null, color: '#000', order: 0, updatedAt: 0, hidden,
+    });
+    const us = [mk('a', '바다'), mk('b', '김바다집'), mk('c', '바다네', 'group'), mk('d', '김'), mk('e', '숨김바다', 'person', true), mk('f', '하늘')];
+    expect(similarUsers('김바다', us).map((u) => u.id)).toEqual(['b', 'a']);
+    expect(similarUsers('바다', us).map((u) => u.id)).toEqual(['b', 'c']);
+    expect(similarUsers('구름', us)).toEqual([]);
+    expect(similarUsers('', us)).toEqual([]);
+    expect(similarUsers('김', us)).toEqual([]);
   });
 
   it('오늘 이후 날짜·시트와 다른 달 날짜를 알려 준다', () => {
