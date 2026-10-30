@@ -63,6 +63,7 @@ for (const [name, vp] of [['desktop', { width: 1366, height: 900 }], ['mobile', 
   // 툴팁
   const col = page.locator('.stat-card svg rect[role=button]').nth(9);
   await page.locator('.stat-card svg').first().evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' })); await page.waitForTimeout(600);
+  await page.mouse.click(2, 2); await page.waitForTimeout(150); // 앞서 열린 툴팁이 있으면 닫는다
   await col.click(); await page.waitForTimeout(200);
   const tip = await page.locator('.popover').innerText();
   console.log('  tooltip:', tip.replace(/\n/g, ' / '));

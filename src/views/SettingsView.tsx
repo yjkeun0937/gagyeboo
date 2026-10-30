@@ -1,4 +1,4 @@
-import { useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { digitsOnly, won } from '../lib/format';
 import type { FutureDisplay } from '../lib/types';
 import { clearSample, hasSample, loadSample } from '../lib/sample';
@@ -6,6 +6,9 @@ import { todayKST } from '../lib/dates';
 import {
   entries,
   exportAll,
+  findLastImport,
+  undoImport,
+  type LastImport,
   importAll,
   resetAll,
   settings,
@@ -21,6 +24,8 @@ import { viewport } from '../ui/viewport';
 import { FixedPage } from './FixedPage';
 import { AccountPage } from './AccountUi';
 import { ListsManager } from './ListsManager';
+import { ExportDialog } from './ExportDialog';
+import { ImportWizard } from './ImportWizard';
 
 const MENU: { id: SettingsPage; label: string; desc: string; icon: 'CalendarDays' | 'ListChecks' | 'Palette' | 'Cloud' | 'Database' | 'Info' | 'Target' }[] = [
   { id: 'fixed', label: '고정지출', desc: '매달 반복되는 지출 등록', icon: 'CalendarDays' },
@@ -28,7 +33,7 @@ const MENU: { id: SettingsPage; label: string; desc: string; icon: 'CalendarDays
   { id: 'goal', label: '월간 목표', desc: '월간 목표 지출액과 초과 경고', icon: 'Target' },
   { id: 'display', label: '화면', desc: '테마·아이콘 표시·글자 크기', icon: 'Palette' },
   { id: 'account', label: '계정·동기화', desc: '구글 로그인과 기기 간 동기화', icon: 'Cloud' },
-  { id: 'data', label: '데이터 관리', desc: '백업·복원·초기화', icon: 'Database' },
+  { id: 'data', label: '데이터 관리', desc: '엑셀 가져오기·내보내기, 백업·복원, 초기화', icon: 'Database' },
   { id: 'about', label: '앱 정보', desc: '버전과 저장 방식', icon: 'Info' },
 ];
 
@@ -193,6 +198,38 @@ function DataPage() {
   const [busy, setBusy] = useState(false);
   const sample = hasSample();
   const count = entries.value.length;
+  const [importOpen, setImportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [lastImport, setLastImport] = useState<LastImport | null>(null);
+  const importedCount = entries.value.filter((e) => e.importBatchId).length;
+  // 가져오기를 마쳤거나 되돌린 뒤, 또는 다른 기기에서 동기화로 내역이 바뀐 뒤에 다시 찾는다
+  useEffect(() => {
+    void findLastImport().then(setLastImport);
+  }, [importedCount, importOpen]);
+
+  const undo = async () => {
+    if (!lastImport) return;
+    const when = new Date(lastImport.at);
+    const label = lastImport.at ? `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}` : '';
+    const hasNew = !!lastImport.meta && lastImport.meta.users.length + lastImport.meta.categories.length + lastImport.meta.payMethods.length + lastImport.meta.payDetails.length > 0;
+    const ok = await askConfirm({
+      title: '마지막 가져오기를 되돌릴까요?',
+      message:
+        `${label ? label + '에 ' : ''}가져온 내역 ${lastImport.count}건을 모두 삭제합니다. 가져온 뒤 고친 내역도 함께 지워지며, 직접 입력한 내역은 그대로입니다.` +
+        (hasNew ? ' 그때 새로 등록한 사용자·분류·지불수단·결제상세는 다른 내역에서 쓰이지 않는 것만 함께 지웁니다.' : ''),
+      confirmLabel: '되돌리기',
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const r = await undoImport(lastImport.id, true);
+      showToast(`가져온 내역 ${r.entries}건을 지웠습니다${r.lists ? ` (목록 ${r.lists}건 포함)` : ''}`);
+      setLastImport(await findLastImport());
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const backup = async () => {
     const data = await exportAll();
@@ -255,6 +292,36 @@ function DataPage() {
 
   return (
     <div class="settings-form">
+      <section class="card-block">
+        <h3>엑셀</h3>
+        <p class="hint">엑셀 가계부의 월 시트를 가져오거나, 지금 내역을 엑셀로 내보냅니다. 파일은 이 기기의 브라우저 안에서만 처리됩니다.</p>
+        <div class="btn-row">
+          <button type="button" class="btn" disabled={busy} onClick={() => setImportOpen(true)}>
+            <Ui name="Upload" size={16} />
+            엑셀에서 가져오기
+          </button>
+          <button type="button" class="btn" disabled={busy} onClick={() => setExportOpen(true)}>
+            <Ui name="Download" size={16} />
+            엑셀로 내보내기
+          </button>
+        </div>
+        {lastImport ? (
+          <div class="wz-last">
+            <p class="hint">
+              마지막 가져오기: 남아 있는 내역 <b class="num">{lastImport.count}건</b>
+              {lastImport.meta?.label ? ` · ${lastImport.meta.label}` : ''}
+            </p>
+            <button type="button" class="btn danger small" disabled={busy} onClick={undo}>
+              <Ui name="Undo2" size={14} />
+              마지막 가져오기 되돌리기
+            </button>
+          </div>
+        ) : null}
+      </section>
+
+      {importOpen ? <ImportWizard onClose={() => setImportOpen(false)} /> : null}
+      {exportOpen ? <ExportDialog onClose={() => setExportOpen(false)} /> : null}
+
       <section class="card-block">
         <h3>백업·복원</h3>
         <p class="hint">모든 데이터는 이 기기의 브라우저에 저장됩니다. 기기를 바꾸거나 브라우저 데이터를 지우기 전에 백업해 두세요.</p>
@@ -338,13 +405,12 @@ function AboutPage() {
         <h3>가계부</h3>
         <dl class="kv">
           <dt>릴리스</dt>
-          <dd>R3 (구글 로그인 · 기기 간 동기화)</dd>
+          <dd>R4 (엑셀 가져오기·내보내기)</dd>
           <dt>저장 위치</dt>
           <dd>이 기기의 브라우저(IndexedDB). 구글 로그인을 하면 내 구글 드라이브의 앱 전용 폴더에도 저장됩니다.</dd>
           <dt>데이터 형식</dt>
           <dd>v{SCHEMA_VERSION}</dd>
         </dl>
-        <p class="hint">엑셀 가져오기·내보내기는 다음 릴리스에서 제공됩니다.</p>
       </section>
     </div>
   );

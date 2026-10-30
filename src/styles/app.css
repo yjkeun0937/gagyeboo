@@ -361,6 +361,8 @@ input[type='date'].input {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  /* 읽기 전용 말풍선: 마우스 아래를 덮어도 클릭을 가로채지 않는다 */
+  pointer-events: none;
 }
 .popover-title {
   display: flex;
@@ -2430,4 +2432,226 @@ select.input {
   padding-block: 8px;
   white-space: normal;
   line-height: 1.35;
+}
+
+/* ───────── 엑셀 가져오기·내보내기 ───────── */
+.wz-step {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 0.85rem;
+}
+.wz-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.wz-pane code {
+  font-size: 0.85em;
+  padding: 1px 4px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.12));
+  border-radius: 4px;
+}
+.wz-sheets {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.wz-sheet {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.wz-sheet + .wz-sheet {
+  border-top: 1px solid var(--line);
+}
+.wz-sheet input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
+.wz-sheet-name {
+  flex: 1;
+  min-width: 0;
+}
+.wz-sheet-meta {
+  flex: none;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.wz-others,
+.wz-cols {
+  margin-top: 4px;
+}
+.wz-others > summary,
+.wz-cols > summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 44px;
+  cursor: pointer;
+  color: var(--primary);
+}
+.wz-map {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  margin: 8px 0;
+}
+.wz-map-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  min-width: 0;
+}
+.wz-total {
+  margin: 0;
+}
+.wz-user {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.wz-user-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.wz-kinds {
+  display: flex;
+  width: 100%;
+}
+.wz-kinds button {
+  flex: 1;
+  min-width: 0;
+  padding-inline: 6px;
+  white-space: nowrap;
+}
+.wz-members,
+.wz-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wz-extra-row {
+  display: flex;
+  gap: 8px;
+}
+.wz-matched {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.wz-errors {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+.wz-new {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.wz-new-row {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.wz-notes {
+  margin: 0;
+}
+.wz-flags {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wz-flag-bulk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+.wz-flag-btns {
+  display: flex;
+  gap: 6px;
+}
+.wz-flag-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.wz-flag-list li + li {
+  border-top: 1px solid var(--line);
+}
+.wz-flag-list label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.wz-flag-list input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+  accent-color: var(--primary);
+}
+.wz-flag-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.wz-flag-amt {
+  flex: none;
+  white-space: nowrap;
+}
+.wz-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.wz-last {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+.wz-last .hint {
+  margin: 0;
+}
+.ex-period {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 480px) {
+  .wz-map {
+    grid-template-columns: 1fr;
+  }
 }

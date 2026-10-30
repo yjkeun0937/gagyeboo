@@ -3,6 +3,7 @@ import { buildStoreIndex, compareEntries } from '../lib/calc';
 import { todayKST, ymOf } from '../lib/dates';
 import { dueDate, fixedEntryId, pendingMonths, runId } from '../lib/fixed';
 import { uid } from '../lib/format';
+import type { ImportPlan } from '../lib/importer';
 import { seedCategories, seedPayMethods } from '../lib/seed';
 import {
   DEFAULT_SETTINGS,
@@ -555,6 +556,91 @@ export async function wipeLocalOnly(): Promise<void> {
   });
   await loadFromDb();
   settings.value = { ...DEFAULT_SETTINGS };
+}
+
+/* ───────── 엑셀 가져오기 ───────── */
+
+/** 가져오기 한 번의 기록. 이 기기에만 남고, 되돌릴 때 '새로 등록한 목록도 지우기'에 쓴다 */
+export interface ImportBatchMeta {
+  id: string;
+  at: number;
+  label: string;
+  entries: number;
+  users: ID[];
+  categories: ID[];
+  payMethods: ID[];
+  payDetails: ID[];
+}
+
+/** 확정: 새 목록과 내역을 한 번에 저장한다. 도중에 실패하면 아무것도 저장되지 않는다. */
+export async function commitImport(plan: ImportPlan, label: string): Promise<ImportBatchMeta> {
+  const d = db();
+  const at = Date.now();
+  const meta: ImportBatchMeta = {
+    id: plan.batchId,
+    at,
+    label,
+    entries: plan.entries.length,
+    users: plan.users.map((u) => u.id),
+    categories: plan.categories.map((c) => c.id),
+    payMethods: plan.payMethods.map((c) => c.id),
+    payDetails: plan.payDetails.map((c) => c.id),
+  };
+  await d.transaction('rw', [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.meta], async () => {
+    await d.users.bulkPut(plan.users.map((x) => ({ ...x, updatedAt: at })));
+    await d.categories.bulkPut(plan.categories.map((x) => ({ ...x, updatedAt: at })));
+    await d.payMethods.bulkPut(plan.payMethods.map((x) => ({ ...x, updatedAt: at })));
+    await d.payDetails.bulkPut(plan.payDetails.map((x) => ({ ...x, updatedAt: at })));
+    await d.entries.bulkPut(plan.entries.map((x) => ({ ...x, updatedAt: at })));
+    const prev = ((await d.meta.get('importBatches'))?.value as ImportBatchMeta[] | undefined) ?? [];
+    await d.meta.put({ key: 'importBatches', value: [...prev, meta].slice(-20) });
+  });
+  await loadFromDb();
+  onLocalChange?.();
+  return meta;
+}
+
+export interface LastImport {
+  id: string;
+  at: number;
+  /** 지금 남아 있는 내역 수 */
+  count: number;
+  meta: ImportBatchMeta | null;
+}
+
+/** 가장 나중에 가져온 묶음 (내역에 남은 묶음 ID로 찾는다. 다른 기기에서 가져온 것도 보인다) */
+export async function findLastImport(): Promise<LastImport | null> {
+  const counts = new Map<string, number>();
+  for (const e of entries.value) if (e.importBatchId) counts.set(e.importBatchId, (counts.get(e.importBatchId) ?? 0) + 1);
+  if (!counts.size) return null;
+  const metas = ((await db().meta.get('importBatches'))?.value as ImportBatchMeta[] | undefined) ?? [];
+  const stamp = (id: string) => metas.find((m) => m.id === id)?.at ?? (Number(id.replace(/\D/g, '')) || 0);
+  const id = [...counts.keys()].sort((a, b) => stamp(b) - stamp(a))[0];
+  return { id, at: stamp(id), count: counts.get(id)!, meta: metas.find((m) => m.id === id) ?? null };
+}
+
+/** 가져오기 묶음을 통째로 지운다. removeNew이면 그때 새로 등록한 목록 중 이제 쓰이지 않는 것도 지운다 */
+export async function undoImport(batchId: string, removeNew: boolean): Promise<{ entries: number; lists: number }> {
+  const targets = entries.value.filter((e) => e.importBatchId === batchId);
+  const d = db();
+  const now = Date.now();
+  await d.entries.bulkPut(targets.map((e) => ({ ...e, deleted: true, updatedAt: now })));
+  await loadFromDb();
+  let lists = 0;
+  const meta = ((await d.meta.get('importBatches'))?.value as ImportBatchMeta[] | undefined)?.find((m) => m.id === batchId);
+  if (removeNew && meta) {
+    // 쓰이는 순서를 거슬러 지운다: 결제상세 → 지불수단, 그룹 → 개인, 분류
+    const groupsFirst = [...meta.users].sort((a, b) => Number(usersById.value.get(a)?.type === 'person') - Number(usersById.value.get(b)?.type === 'person'));
+    const plan: [ListTableName, ID[]][] = [
+      ['payDetails', meta.payDetails],
+      ['payMethods', meta.payMethods],
+      ['users', groupsFirst],
+      ['categories', meta.categories],
+    ];
+    for (const [table, ids] of plan) for (const id of ids) if (await deleteItem(table, id)) lists++;
+  }
+  onLocalChange?.();
+  return { entries: targets.length, lists };
 }
 
 /* ───────── 알림(토스트) ───────── */
