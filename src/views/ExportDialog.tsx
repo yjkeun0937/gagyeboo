@@ -1,3 +1,4 @@
+import { DateField } from '../ui/DateField';
 import { useMemo, useState } from 'preact/hooks';
 import { buildCsv, buildExportSheets, rangeLabel, selectEntries, type ExportData, type ExportFormat, type ExportOptions, type ExportRange } from '../lib/exporter';
 import { todayKST } from '../lib/dates';
@@ -99,9 +100,9 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         ) : null}
         {kind === 'period' ? (
           <div class="ex-period">
-            <input class="input" type="date" aria-label="시작일" value={from} onInput={(e) => setFrom(e.currentTarget.value)} />
+            <DateField strict label="시작일" value={from} onChange={setFrom} />
             <span>~</span>
-            <input class="input" type="date" aria-label="종료일" value={to} onInput={(e) => setTo(e.currentTarget.value)} />
+            <DateField strict label="종료일" value={to} onChange={setTo} />
           </div>
         ) : null}
         {periodBad ? <p class="form-error">시작일과 종료일을 확인해 주세요</p> : null}

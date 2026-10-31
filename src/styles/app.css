@@ -3695,3 +3695,10 @@ html.kb-open .fab {
     height: 100%;
   }
 }
+.ex-period .date-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.date-field .input {
+  text-align: left;
+}

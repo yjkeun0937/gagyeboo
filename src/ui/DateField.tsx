@@ -1,4 +1,4 @@
-import { useRef } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { completeOnTab, typeDate } from '../lib/dateinput';
 import { isValidYmd } from '../lib/dates';
 import { Ui } from './icons';
@@ -14,13 +14,36 @@ export function DateField({
   onChange,
   label,
   autoFocus,
+  strict,
+  class: cls,
 }: {
   id?: string;
   value: string;
   onChange: (v: string) => void;
   label?: string;
   autoFocus?: boolean;
+  /** true면 완성된 올바른 날짜(또는 빈 칸)가 될 때만 onChange를 부른다. 치는 도중의 글자는 이 칸 안에만 남는다 (필터·기간 칸용) */
+  strict?: boolean;
+  class?: string;
 }) {
+  const [typed, setTyped] = useState(value);
+  const committed = useRef(value);
+  // 밖에서 값이 바뀌면(프리셋 버튼 등) 보이는 글자도 따라간다
+  useEffect(() => {
+    if (strict && value !== committed.current) {
+      committed.current = value;
+      setTyped(value);
+    }
+  }, [value, strict]);
+  const shown = strict ? typed : value;
+  const emit = (next: string) => {
+    if (!strict) return onChange(next);
+    setTyped(next);
+    if (next === '' || isValidYmd(next)) {
+      committed.current = next;
+      onChange(next);
+    }
+  };
   const textRef = useRef<HTMLInputElement>(null);
   const pickRef = useRef<HTMLInputElement>(null);
 
@@ -28,11 +51,11 @@ export function DateField({
     if (el.value !== next) el.value = next;
     // 입력 중에 가운데를 고치는 경우가 아니면 커서는 항상 끝
     el.setSelectionRange(next.length, next.length);
-    onChange(next);
+    emit(next);
   };
 
   return (
-    <div class="date-field">
+    <div class={`date-field ${cls ?? ''}`}>
       <input
         id={id}
         ref={textRef}
@@ -44,7 +67,7 @@ export function DateField({
         maxLength={10}
         aria-label={label}
         autoFocus={autoFocus}
-        value={value}
+        value={shown}
         onInput={(e) => {
           const el = e.currentTarget;
           const deleting = ((e as InputEvent).inputType ?? '').startsWith('delete');
@@ -83,11 +106,11 @@ export function DateField({
         type="date"
         tabIndex={-1}
         aria-hidden="true"
-        value={isValidYmd(value) ? value : ''}
+        value={isValidYmd(shown) ? shown : ''}
         onChange={(e) => {
           const v = e.currentTarget.value;
           if (v) {
-            onChange(v);
+            emit(v);
             textRef.current?.focus();
           }
         }}

@@ -57,6 +57,7 @@ import { MonthNav } from '../ui/monthnav';
 import { CalendarView } from './CalendarView';
 import { EntryCard, Hl, rowKey } from './EntryCard';
 import { showPopover } from '../ui/overlay';
+import { DateField } from '../ui/DateField';
 import { Empty, Pills, Split } from '../ui/parts';
 import { iconMode, viewport } from '../ui/viewport';
 
@@ -610,22 +611,20 @@ function FilterBar({
           {allPeriod ? (
             <div class="range-row">
               <span class="range-label">기간</span>
-              <input
-                class="input date-filter"
-                type="date"
-                aria-label="시작일"
+              <DateField
+                class="date-filter"
+                strict
+                label="시작일"
                 value={f.dateFrom ?? ''}
-                max={f.dateTo ?? undefined}
-                onInput={(e) => (filter.value = { ...f, dateFrom: e.currentTarget.value || null })}
+                onChange={(v) => (filter.value = { ...f, dateFrom: v || null })}
               />
               <span aria-hidden="true">~</span>
-              <input
-                class="input date-filter"
-                type="date"
-                aria-label="종료일"
+              <DateField
+                class="date-filter"
+                strict
+                label="종료일"
                 value={f.dateTo ?? ''}
-                min={f.dateFrom ?? undefined}
-                onInput={(e) => (filter.value = { ...f, dateTo: e.currentTarget.value || null })}
+                onChange={(v) => (filter.value = { ...f, dateTo: v || null })}
               />
             </div>
           ) : null}

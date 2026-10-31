@@ -40,6 +40,7 @@ import {
 import { CategoryDot, PayGlyph, Ui, UserGlyph } from '../ui/icons';
 import { filter, historyView, openEdit, searchAllPeriod, searchOpen, setTab } from '../ui/nav';
 import { MonthNav } from '../ui/monthnav';
+import { DateField } from '../ui/DateField';
 import { Empty, Split } from '../ui/parts';
 
 type StatsTab = 'month' | 'year' | 'all' | 'range';
@@ -1003,26 +1004,14 @@ function RangeStats() {
         <div class="range-dates">
           <div class="field">
             <label for="rg-start">시작일</label>
-            <input
-              id="rg-start"
-              class="input"
-              type="date"
-              value={start}
-              onInput={(e) => e.currentTarget.value && (rangeStart.value = e.currentTarget.value)}
-            />
+            <DateField id="rg-start" strict value={start} onChange={(v) => v && (rangeStart.value = v)} />
           </div>
           <span class="range-sep" aria-hidden="true">
             ~
           </span>
           <div class="field">
             <label for="rg-end">종료일</label>
-            <input
-              id="rg-end"
-              class="input"
-              type="date"
-              value={end}
-              onInput={(e) => e.currentTarget.value && (rangeEnd.value = e.currentTarget.value)}
-            />
+            <DateField id="rg-end" strict value={end} onChange={(v) => v && (rangeEnd.value = v)} />
           </div>
         </div>
         <div class="chips">

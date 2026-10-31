@@ -144,6 +144,39 @@ console.log('\n[날짜 직접 입력]');
   ok((await page.locator('.sheet .error, .sheet [role="alert"], .form-error').first().innerText().catch(() => '')).includes('만기일'), '잘못된 날짜는 저장 막고 안내');
 }
 
+console.log('\n[다른 날짜 칸]');
+{
+  const { page } = await setup({ width: 1280, height: 800 });
+  await page.locator('.tab[data-tab="stats"]').click();
+  await page.locator('.subtab', { hasText: '기간 지정' }).click();
+  await page.waitForSelector('#rg-start');
+  ok(await page.locator('input[type="date"]:not(.date-native)').count() === 0, '기간 지정: 브라우저 기본 날짜 입력이 보이지 않음');
+  const s0 = await page.locator('#rg-start').inputValue();
+  await page.locator('#rg-start').click();
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('2026');
+  const total = () => page.locator('.tile-value').first().innerText().catch(() => '');
+  ok((await page.locator('#rg-start').inputValue()) === '2026-', '치는 도중 글자는 입력창에 남음');
+  await page.keyboard.type('0901');
+  ok((await page.locator('#rg-start').inputValue()) === '2026-09-01', '시작일 직접 입력');
+  await page.locator('.chip', { hasText: '이번 달' }).click();
+  await page.waitForTimeout(150);
+  const v = await page.locator('#rg-start').inputValue();
+  ok(/^\d{4}-\d{2}-01$/.test(v) && v !== '2026-09-01', `프리셋을 누르면 입력창도 따라 바뀜 (${v})`);
+  await page.locator('#rg-end').click(); await page.keyboard.press('Control+A'); await page.keyboard.type('26'); await page.keyboard.press('Tab');
+  ok((await page.locator('#rg-end').inputValue()) === '2026-', '기간 지정 종료일: 26 + Tab → 2026-');
+  // 내역 검색: 전체 기간 필터
+  await page.locator('.tab[data-tab="history"]').click();
+  await page.locator('button[aria-label="검색·필터"]').click();
+  const all = page.locator('text=전체 기간').first();
+  if (await all.count()) await all.click().catch(() => {});
+  if (await page.locator('input[aria-label="시작일"]').count()) {
+    await page.fill('input[aria-label="시작일"]', '2026-10-01');
+    ok((await page.locator('input[aria-label="시작일"]').inputValue()) === '2026-10-01', '검색 필터 시작일 입력');
+  }
+  await page.getByRole('button', { name: /내보내기/ }).first().click().catch(() => {});
+}
+
 await browser.close();
 console.log(failed ? `\n${failed}건 실패` : '\nALL PASSED');
 process.exit(failed ? 1 : 0);
