@@ -8,7 +8,7 @@
  * 업로드할지는 "내 기록 중 드라이브보다 새롭거나 드라이브에 없는 것이 있는가"로 정하므로,
  * 두 기기가 동시에 올려 한쪽이 덮어쓰여도 다음 동기화에서 빠진 기록이 다시 올라간다.
  */
-import type { Base, Entry } from '../lib/types';
+import type { Asset, AssetLog, Base, Entry } from '../lib/types';
 import { SCHEMA_VERSION, type LedgerDB } from '../store/db';
 
 export interface RemoteFile {
@@ -39,6 +39,8 @@ export class SyncError extends Error {
 }
 
 export const META_FILE = 'meta.json';
+/** 재산상황(항목과 변경 이력). 계정 공유를 만들 때 따로 뺄 수 있게 별도 파일로 둔다 */
+export const ASSETS_FILE = 'assets.json';
 export const entriesFile = (year: string) => `entries-${year}.json`;
 const ENTRIES_RE = /^entries-(\d{4})\.json$/;
 
@@ -64,6 +66,14 @@ interface MetaDoc {
   fixedRuns: Base[];
   shared?: SharedSettings;
   firstUseYm?: string;
+}
+
+interface AssetsDoc {
+  app: 'gagyeboo';
+  kind: 'assets';
+  schemaVersion: number;
+  assets: Asset[];
+  logs: AssetLog[];
 }
 
 interface EntriesDoc {
@@ -165,6 +175,20 @@ async function localScopes(ldb: LedgerDB): Promise<Scope[]> {
         JSON.stringify({ app: 'gagyeboo', kind: 'entries', schemaVersion: SCHEMA_VERSION, year, entries: rows } satisfies EntriesDoc),
     });
   }
+  // assets.json (삭제 표시도 올려야 다른 기기에서 지워진다)
+  const assetRows = (await ldb.assets.toArray()) as Asset[];
+  const logRows = (await ldb.assetLogs.toArray()) as AssetLog[];
+  if (assetRows.length || logRows.length) {
+    const st: Record<string, number> = {};
+    for (const r of assetRows) st[`a:${r.id}`] = r.updatedAt;
+    for (const r of logRows) st[`l:${r.id}`] = r.updatedAt;
+    scopes.push({
+      name: ASSETS_FILE,
+      stamps: st,
+      build: () =>
+        JSON.stringify({ app: 'gagyeboo', kind: 'assets', schemaVersion: SCHEMA_VERSION, assets: assetRows, logs: logRows } satisfies AssetsDoc),
+    });
+  }
   return scopes;
 }
 
@@ -177,7 +201,7 @@ interface Applied {
   stamps: Record<string, number>;
 }
 
-function parse(text: string): MetaDoc | EntriesDoc {
+function parse(text: string): MetaDoc | EntriesDoc | AssetsDoc {
   let doc: unknown;
   try {
     doc = JSON.parse(text);
@@ -185,13 +209,13 @@ function parse(text: string): MetaDoc | EntriesDoc {
     throw new SyncError('bad-data', '드라이브 파일을 읽을 수 없습니다 (형식 오류)');
   }
   const d = doc as { app?: string; kind?: string; schemaVersion?: number };
-  if (!d || d.app !== 'gagyeboo' || (d.kind !== 'meta' && d.kind !== 'entries')) {
+  if (!d || d.app !== 'gagyeboo' || (d.kind !== 'meta' && d.kind !== 'entries' && d.kind !== 'assets')) {
     throw new SyncError('bad-data', '이 앱의 파일이 아닙니다');
   }
   if ((d.schemaVersion ?? 0) > SCHEMA_VERSION) {
     throw new SyncError('newer-version', '다른 기기에서 앱이 더 새 버전으로 바뀌었습니다. 이 화면을 새로고침한 뒤 다시 시도해 주세요');
   }
-  return doc as MetaDoc | EntriesDoc;
+  return doc as MetaDoc | EntriesDoc | AssetsDoc;
 }
 
 /** 한 테이블에 대해, 로컬에 없거나 더 오래된 기록만 덮어쓴다 (읽기-비교-쓰기를 한 트랜잭션에서) */
@@ -214,7 +238,7 @@ async function mergeRows(ldb: LedgerDB, name: string, rows: Base[]): Promise<num
   return applied;
 }
 
-async function applyDoc(ldb: LedgerDB, doc: MetaDoc | EntriesDoc): Promise<Applied> {
+async function applyDoc(ldb: LedgerDB, doc: MetaDoc | EntriesDoc | AssetsDoc): Promise<Applied> {
   const stamps: Record<string, number> = {};
   let rows = 0;
   let changed = false;
@@ -222,6 +246,15 @@ async function applyDoc(ldb: LedgerDB, doc: MetaDoc | EntriesDoc): Promise<Appli
     const list = Array.isArray(doc.entries) ? doc.entries.filter((e) => typeof e?.date === 'string' && typeof e.amount === 'number') : [];
     for (const e of list) stamps[e.id] = e.updatedAt;
     rows += await mergeRows(ldb, 'entries', list);
+    return { rows, changed: rows > 0, stamps };
+  }
+  if (doc.kind === 'assets') {
+    const as = Array.isArray(doc.assets) ? doc.assets.filter((a) => a && typeof a.name === 'string') : [];
+    const ls = Array.isArray(doc.logs) ? doc.logs.filter((l) => l && typeof l.assetId === 'string' && typeof l.at === 'number') : [];
+    for (const a of as) stamps[`a:${a.id}`] = a.updatedAt;
+    for (const l of ls) stamps[`l:${l.id}`] = l.updatedAt;
+    rows += await mergeRows(ldb, 'assets', as);
+    rows += await mergeRows(ldb, 'assetLogs', ls);
     return { rows, changed: rows > 0, stamps };
   }
   for (const t of META_TABLES) {
@@ -276,7 +309,7 @@ export async function syncOnce(ldb: LedgerDB, client: DriveClient, prev: SyncSta
     const listed = await client.list();
     const remote = new Map<string, RemoteFile[]>();
     for (const f of listed) {
-      if (f.name !== META_FILE && !ENTRIES_RE.test(f.name)) continue;
+      if (f.name !== META_FILE && f.name !== ASSETS_FILE && !ENTRIES_RE.test(f.name)) continue;
       (remote.get(f.name) ?? remote.set(f.name, []).get(f.name)!).push(f);
     }
     for (const files of remote.values()) files.sort((a, b) => (a.id < b.id ? -1 : 1));

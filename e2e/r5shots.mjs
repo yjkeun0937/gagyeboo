@@ -22,7 +22,7 @@ async function shots(name, vp, mobile) {
   await page.waitForTimeout(200);
   for (let i = 0; i < 4; i++) { const inp = page.locator('.budget-row input').nth(i); await inp.fill(['50000', '80000', '300000', '20000'][i]); await inp.press('Enter'); }
   await snap('4-budget');
-  await page.locator('.tab', { hasText: '내역' }).click(); await page.locator('.view-toggle').click();
+  await page.locator('.tab[data-tab="history"]').click(); await page.locator('.view-toggle').click();
   if (mobile) await page.locator('.breakdown-toggle').click();
   await snap('5-chips');
   await page.locator('.tab', { hasText: '통계' }).click(); await page.waitForTimeout(500);

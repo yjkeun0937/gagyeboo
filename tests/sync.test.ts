@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { LedgerDB, SCHEMA_VERSION } from '../src/store/db';
 import { emptySyncState, previewMerge, syncOnce, SyncError, type SyncState } from '../src/sync/engine';
-import type { Entry } from '../src/lib/types';
+import type { Asset, AssetLog, Entry } from '../src/lib/types';
 import { seedCategories } from '../src/lib/seed';
 import { MemoryDrive } from './memoryDrive';
 
@@ -334,5 +334,81 @@ describe('로그인 직후 병합 미리보기', () => {
     await b.put('y1', { updatedAt: 6 });
     const p = await previewMerge(b.db, drive);
     expect(p).toEqual({ local: 2, remote: 2, merged: 3 });
+  });
+});
+
+describe('동기화: 재산상황', () => {
+  const asset = (id: string, patch: Partial<Asset> = {}): Asset => ({
+    id,
+    category: 'deposit',
+    name: '가상은행',
+    kind: '보통예금',
+    owner: null,
+    amount: 5000,
+    payStatus: '',
+    coverage: '',
+    term: '',
+    rate: null,
+    maturity: '',
+    tax: null,
+    memo: '',
+    inCash: true,
+    state: 'active',
+    endReason: null,
+    endedOn: null,
+    createdAt: 1,
+    updatedAt: 10,
+    ...patch,
+  });
+  const log = (id: string, assetId: string, at: number): AssetLog => ({
+    id,
+    assetId,
+    at,
+    kind: 'create',
+    changes: [{ field: 'amount', from: null, to: 5000 }],
+    note: '',
+    updatedAt: at,
+  });
+
+  it('재산 항목과 변경 이력이 assets.json으로 다른 기기에 전달되고, 최신 수정이 이긴다', async () => {
+    const a = new Device('a');
+    const b = new Device('b');
+    await a.db.assets.put(asset('s1'));
+    await a.db.assetLogs.put(log('l1', 's1', 10));
+    await a.sync();
+    expect(drive.byName('assets.json')).toHaveLength(1);
+    await b.sync();
+    expect(((await b.db.assets.get('s1')) as Asset).amount).toBe(5000);
+    expect(await b.db.assetLogs.count()).toBe(1);
+
+    await b.db.assets.put(asset('s1', { amount: 9000, updatedAt: 30 }));
+    await a.db.assets.put(asset('s1', { amount: 7000, updatedAt: 20 }));
+    await b.sync();
+    await a.sync();
+    await b.sync();
+    expect(((await a.db.assets.get('s1')) as Asset).amount).toBe(9000);
+    expect(((await b.db.assets.get('s1')) as Asset).amount).toBe(9000);
+  });
+
+  it('완전 삭제(삭제 표시)가 다른 기기에서도 반영된다', async () => {
+    const a = new Device('a');
+    const b = new Device('b');
+    await a.db.assets.put(asset('s1'));
+    await a.db.assetLogs.put(log('l1', 's1', 10));
+    await a.sync();
+    await b.sync();
+    await a.db.assets.put(asset('s1', { deleted: true, updatedAt: 40 }));
+    await a.db.assetLogs.put({ ...log('l1', 's1', 10), deleted: true, updatedAt: 40 });
+    await a.sync();
+    await b.sync();
+    expect(((await b.db.assets.get('s1')) as Asset).deleted).toBe(true);
+    expect(((await b.db.assetLogs.get('l1')) as AssetLog).deleted).toBe(true);
+  });
+
+  it('재산 항목이 없으면 assets.json을 만들지 않는다', async () => {
+    const a = new Device('a');
+    await a.put('e1', { updatedAt: 10 });
+    await a.sync();
+    expect(drive.byName('assets.json')).toHaveLength(0);
   });
 });

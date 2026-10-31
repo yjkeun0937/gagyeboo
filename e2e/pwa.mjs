@@ -93,7 +93,7 @@ await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => 
 await page.waitForSelector('.update-banner', { timeout: 10000 });
 ok(true, '새 버전을 받아 두면 화면 위에 안내가 뜸');
 ok((await page.locator('.update-banner').innerText()).includes('새로고침'), '안내 문구에 새로고침');
-await page.locator('.tab', { hasText: '내역' }).click(); await page.waitForTimeout(300);
+await page.locator('.tab[data-tab="history"]').click(); await page.waitForTimeout(300);
 // 안내가 뜬 동안에도 지금 화면은 이전 버전 그대로 동작
 ok((await page.locator('.ledger', { hasText: '오프라인 입력' }).count()) === 1, '안내만 뜨고 화면은 그대로');
 await Promise.all([page.waitForEvent('load'), page.locator('.update-banner .btn').click()]);

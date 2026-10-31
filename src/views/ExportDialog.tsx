@@ -2,7 +2,7 @@ import { useMemo, useState } from 'preact/hooks';
 import { buildCsv, buildExportSheets, rangeLabel, selectEntries, type ExportData, type ExportFormat, type ExportOptions, type ExportRange } from '../lib/exporter';
 import { todayKST } from '../lib/dates';
 import { writeXlsx } from '../lib/xlsx';
-import { categories, entries, payDetails, payMethods, showToast, users } from '../store/store';
+import { assetLogs, assets, categories, entries, payDetails, payMethods, showToast, users } from '../store/store';
 import { downloadFile, XLSX_MIME } from '../ui/download';
 import { Ui } from '../ui/icons';
 import { Modal } from '../ui/overlay';
@@ -17,6 +17,8 @@ function data(): ExportData {
     payMethods: payMethods.value,
     payDetails: payDetails.value,
     today: todayKST(),
+    assets: assets.value,
+    assetLogs: assetLogs.value,
   };
 }
 
@@ -30,9 +32,11 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const [from, setFrom] = useState(dates[0] ?? todayKST());
   const [to, setTo] = useState(dates[dates.length - 1] ?? todayKST());
   const [pending, setPending] = useState(true);
+  const hasAssets = assets.value.length > 0;
+  const [withAssets, setWithAssets] = useState(true);
 
   const range: ExportRange = kind === 'all' ? { kind: 'all' } : kind === 'year' ? { kind: 'year', year } : { kind: 'period', from, to };
-  const opts: ExportOptions = { format, range, includePending: pending };
+  const opts: ExportOptions = { format, range, includePending: pending, includeAssets: hasAssets && withAssets };
   const periodBad = kind === 'period' && (!from || !to || from > to);
   const count = periodBad ? 0 : selectEntries(data(), opts).length;
   const name = (ext: string) => `gagyeboo-${rangeLabel(range)}-${format === 'monthly' ? 'monthly' : 'list'}-${todayKST()}.${ext}`;
@@ -124,6 +128,13 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         <input type="checkbox" checked={pending} onChange={(e) => setPending(e.currentTarget.checked)} />
         [보류] 내역도 목록에 포함 (요약 합계는 항상 보류를 뺍니다)
       </label>
+
+      {hasAssets ? (
+        <label class="check">
+          <input type="checkbox" checked={withAssets} onChange={(e) => setWithAssets(e.currentTarget.checked)} />
+          재산상황·재산 이력 시트도 포함 (엑셀 파일만)
+        </label>
+      ) : null}
 
       <p class="hint">
         <b class="num">{count}건</b>을 내보냅니다. 사용자 구분(개인·그룹·구성원)은 <code>사용자</code> 시트에 함께 들어가, 이 파일을 다시 가져올 때 미리 채워집니다.

@@ -56,7 +56,7 @@ ok((await A.page.locator('.guide code.copy').innerText()) === 'http://localhost:
 await A.page.fill('#cid', CID);
 await A.page.getByRole('button', { name: '저장', exact: true }).click();
 await A.page.screenshot({ path: 'e2e/out/r3-desktop-settings-account.png', fullPage: true });
-await A.page.locator('.tab', { hasText: '내역' }).click();
+await A.page.locator('.tab[data-tab="history"]').click();
 await A.sample();
 const total0 = await A.total();
 console.log('  sample total', total0);
@@ -123,14 +123,14 @@ await Bm.syncNow(); await Bm.waitStatus('idle'); await Bm.page.waitForTimeout(30
 await Bm.page.locator('.tab', { hasText: '설정' }).click();
 await Bm.page.locator('.menu-item', { hasText: '월간 목표' }).click();
 ok((await Bm.page.inputValue('#goal-in')).replace(/,/g, '') === '2500000', '모바일에도 월간 목표 2,500,000원 반영');
-await Bm.page.locator('.tab', { hasText: '내역' }).click();
+await Bm.page.locator('.tab[data-tab="history"]').click();
 
 console.log('\n[F] 로그인 만료 → 재연결 필요 → 입력은 계속 가능 → 재연결하면 밀린 변경 반영');
 google.expired = true;
 await A.page.evaluate(() => localStorage.removeItem('gagyeboo.token'));
 await A.page.reload();
 await A.page.waitForSelector('.account-chip'); await A.page.waitForTimeout(500); if (await A.page.locator('.modal.is-wide').count()) { await A.page.keyboard.press('Escape'); await A.page.waitForTimeout(200); }
-await A.page.locator('.tab', { hasText: '내역' }).click();
+await A.page.locator('.tab[data-tab="history"]').click();
 ok((await A.status()) === 'reconnect', '토큰이 없으면 "재연결 필요"');
 ok((await A.chip().innerText()).includes('재연결 필요'), '칩 문구');
 await A.page.screenshot({ path: 'e2e/out/r3-desktop-reconnect.png' });

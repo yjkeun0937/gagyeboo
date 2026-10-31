@@ -24,7 +24,7 @@ async function run(name, vp) {
     else await page.locator('.side-item', { hasText: label }).click();
     await page.waitForTimeout(150);
   };
-  const toHistory = async () => { await page.locator('.tab', { hasText: '내역' }).click(); await page.waitForTimeout(250); };
+  const toHistory = async () => { await page.locator('.tab[data-tab="history"]').click(); await page.waitForTimeout(250); };
   const groupDates = async () => page.evaluate(() => [...document.querySelectorAll('[data-date]')].map((e) => e.getAttribute('data-date')).filter((v, i, a) => a.indexOf(v) === i));
 
   // 1) 정렬

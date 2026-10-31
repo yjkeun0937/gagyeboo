@@ -1,7 +1,8 @@
 import { entryStatus, compareEntries, summarize } from './calc';
 import { monthNum, ymOf } from './dates';
 import { yearStats } from './stats';
-import type { Category, Entry, ID, PayDetail, PayMethod, User } from './types';
+import type { Asset, AssetLog, Category, Entry, ID, PayDetail, PayMethod, User } from './types';
+import { END_REASON_LABEL, FIELD_LABEL, STATE_LABEL, STATE_ORDER, TAX_LABEL, categoryDef, formatAt, formatValue, groupByState, sortAssets, summarize as summarizeAssets } from './assets';
 import { ymdToSerial, type WInput, type WSheet } from './xlsx';
 
 /** 엑셀·CSV 내보내기 (기획서 10.2). 화면과 무관한 순수 계산만 한다. */
@@ -18,6 +19,8 @@ export interface ExportOptions {
   range: ExportRange;
   /** [보류] 내역을 목록에 넣을지 (요약 합계는 항상 앱과 같이 보류를 뺀다) */
   includePending: boolean;
+  /** 재산상황·재산 이력 시트를 넣을지 (엑셀만) */
+  includeAssets?: boolean;
 }
 
 export interface ExportData {
@@ -27,6 +30,8 @@ export interface ExportData {
   payMethods: PayMethod[];
   payDetails: PayDetail[];
   today: string;
+  assets?: Asset[];
+  assetLogs?: AssetLog[];
 }
 
 export const LIST_HEADERS = ['날짜', '사용처', '명세', '분류', '금액', '사용자', '지불수단', '결제상세', '상태'] as const;
@@ -186,6 +191,62 @@ function yearSheet(year: number, es: Entry[], d: ExportData): WSheet {
   };
 }
 
+/** `재산상황` 시트: 보유 → 종료 → 휴지통 순, 분류 순. 아래에 보유 기준 총계 */
+export function assetSheet(d: ExportData): WSheet {
+  const ownerName = new Map(d.users.map((u) => [u.id, u.name]));
+  const live = (d.assets ?? []).filter((a) => !a.deleted);
+  const heads = ['상태', '분류', '이름·기관', '종류', '소유자', '금액', '납입 상태', '보장·조건', '기간', '이율(%)', '만기일', '과세', '현금 포함', '비고', '종료 사유', '종료일'];
+  const rows: WInput[][] = [heads.map((h) => ({ v: h, s: 'head' as const }))];
+  for (const g of groupByState(live, STATE_ORDER)) {
+    for (const a of sortAssets(g.items)) {
+      rows.push([
+        STATE_LABEL[a.state],
+        categoryDef(a.category).label,
+        a.name,
+        a.kind,
+        a.owner ? (ownerName.get(a.owner) ?? '') : '',
+        a.amount == null ? '' : { v: a.amount, s: 'num' as const },
+        a.payStatus,
+        a.coverage,
+        a.term,
+        a.rate == null ? '' : a.rate,
+        a.maturity ? { v: ymdToSerial(a.maturity), s: 'date' as const } : '',
+        a.tax ? TAX_LABEL[a.tax] : '',
+        a.inCash ? '포함' : '',
+        a.memo,
+        a.endReason ? END_REASON_LABEL[a.endReason] : '',
+        a.endedOn ? { v: ymdToSerial(a.endedOn), s: 'date' as const } : '',
+      ]);
+    }
+  }
+  const sum = summarizeAssets(live.filter((a) => a.state === 'active'));
+  const updated = Math.max(0, ...(d.assets ?? []).map((a) => a.updatedAt), ...(d.assetLogs ?? []).map((l) => l.updatedAt));
+  rows.push([], [{ v: '보유 총계', s: 'bold' }, '', '', '', '', { v: sum.total, s: 'boldnum' }]);
+  rows.push([{ v: '현금 총계', s: 'bold' }, '', '', '', '', { v: sum.cash, s: 'boldnum' }]);
+  if (updated) rows.push([{ v: '최종 업데이트', s: 'bold' }, formatAt(updated)]);
+  rows.push([{ v: '※ 총계는 보유 항목만 더한 값이며, 금액이 비어 있는 항목은 빠집니다', s: 'mute' }]);
+  return { name: '재산상황', freezeRows: 1, widths: [8, 12, 20, 12, 12, 16, 12, 22, 10, 9, 12, 8, 9, 24, 10, 12], rows };
+}
+
+/** `재산 이력` 시트: 변경 한 건당 한 줄 (최신 먼저) */
+export function assetLogSheet(d: ExportData): WSheet {
+  const live = (d.assets ?? []).filter((a) => !a.deleted);
+  const byId = new Map(live.map((a) => [a.id, a]));
+  const ownerName = new Map(d.users.map((u) => [u.id, u.name]));
+  const ctx = { userName: (id: ID) => ownerName.get(id) ?? '(삭제된 사용자)' };
+  const heads = ['일시', '이름·기관', '종류', '구분', '항목', '변경 전', '변경 후', '메모'];
+  const rows: WInput[][] = [heads.map((h) => ({ v: h, s: 'head' as const }))];
+  const logs = (d.assetLogs ?? []).filter((l) => !l.deleted && byId.has(l.assetId)).sort((a, b) => b.at - a.at);
+  for (const l of logs) {
+    const a = byId.get(l.assetId)!;
+    const kind = l.kind === 'create' ? '등록' : l.kind === 'state' ? '상태 변경' : '수정';
+    for (const c of l.changes) {
+      rows.push([formatAt(l.at), a.name, a.kind, kind, FIELD_LABEL[c.field] ?? c.field, l.kind === 'create' ? '' : formatValue(c.field, c.from, ctx), formatValue(c.field, c.to, ctx), l.note]);
+    }
+  }
+  return { name: '재산 이력', freezeRows: 1, widths: [17, 20, 12, 10, 12, 20, 20, 24], rows };
+}
+
 /** 엑셀 파일로 만들 시트들 */
 export function buildExportSheets(d: ExportData, o: ExportOptions): WSheet[] {
   const es = selectEntries(d, o);
@@ -209,6 +270,7 @@ export function buildExportSheets(d: ExportData, o: ExportOptions): WSheet[] {
     for (const y of years) sheets.push(yearSheet(y, es, d));
   }
   sheets.push(userSheet(d));
+  if (o.includeAssets && (d.assets ?? []).some((a) => !a.deleted)) sheets.push(assetSheet(d), assetLogSheet(d));
   return sheets;
 }
 

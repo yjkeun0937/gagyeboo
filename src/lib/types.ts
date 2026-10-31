@@ -106,7 +106,9 @@ export type TableName =
   | 'payMethods'
   | 'payDetails'
   | 'fixedItems'
-  | 'fixedRuns';
+  | 'fixedRuns'
+  | 'assets'
+  | 'assetLogs';
 
 /** 설정 > 목록 관리에서 다루는 목록 */
 export type ListTableName = 'categories' | 'users' | 'payMethods' | 'payDetails';
@@ -171,3 +173,58 @@ export const EMPTY_FILTER: EntryFilter = {
   dateFrom: null,
   dateTo: null,
 };
+
+/* ───────── 재산상황 ───────── */
+
+export type AssetCategory = 'insurance' | 'realestate' | 'pension' | 'deposit' | 'securities' | 'other';
+/** 보유 / 종료(만기·해지·매각 등) / 휴지통 */
+export type AssetState = 'active' | 'ended' | 'trash';
+export type EndReason = 'matured' | 'terminated' | 'sold' | 'other';
+export type AssetTax = 'taxable' | 'taxfree';
+
+export interface Asset extends Base {
+  category: AssetCategory;
+  /** 금융기관·보험사·자산 이름 */
+  name: string;
+  /** 종류 (정기예금, 종신, 아파트 …). 직접 적을 수도 있다 */
+  kind: string;
+  /** 소유자(사용자). null이면 선택 안 함 */
+  owner: ID | null;
+  /** 원. null이면 금액 미정 (합계에서 빠진다) */
+  amount: number | null;
+  /** 납입 상태 (보험·연금) */
+  payStatus: string;
+  /** 보장·조건 (보험) */
+  coverage: string;
+  /** 기간 (정기예금·적금) */
+  term: string;
+  /** 이율 % (정기예금·적금) */
+  rate: number | null;
+  /** 만기일 YYYY-MM-DD (정기예금·적금) */
+  maturity: string | null;
+  tax: AssetTax | null;
+  memo: string;
+  /** '현금' 합계에 넣는가 */
+  inCash: boolean;
+  state: AssetState;
+  /** state가 ended일 때만 */
+  endReason: EndReason | null;
+  endedOn: string | null;
+  createdAt: number;
+}
+
+export interface AssetChange {
+  field: string;
+  from: unknown;
+  to: unknown;
+}
+
+/** 항목 하나의 변경 이력 한 줄. 한 번 쓰면 고치지 않는다 */
+export interface AssetLog extends Base {
+  assetId: ID;
+  /** 변경 시각(ms) */
+  at: number;
+  kind: 'create' | 'edit' | 'state';
+  changes: AssetChange[];
+  note: string;
+}

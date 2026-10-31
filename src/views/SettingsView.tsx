@@ -385,7 +385,7 @@ function DataPage() {
   const reset = async () => {
     const ok = await askConfirm({
       title: '모든 데이터를 지울까요?',
-      message: '내역·사용자·결제상세와 설정이 모두 삭제되고, 분류와 지불수단은 기본값으로 돌아갑니다. 되돌릴 수 없습니다.',
+      message: '내역·재산상황·사용자·결제상세와 설정이 모두 삭제되고, 분류와 지불수단은 기본값으로 돌아갑니다. 되돌릴 수 없습니다.',
       confirmLabel: '모두 지우기',
       danger: true,
     });
@@ -495,7 +495,7 @@ function DataPage() {
 
       <section class="card-block danger-zone">
         <h3>초기화</h3>
-        <p class="hint">내역과 목록, 설정을 모두 지우고 처음 상태로 되돌립니다.</p>
+        <p class="hint">내역과 재산상황, 목록, 설정을 모두 지우고 처음 상태로 되돌립니다.</p>
         <div class="btn-row">
           <button type="button" class="btn danger" disabled={busy} onClick={reset}>
             <Ui name="Trash2" size={16} />
@@ -514,7 +514,7 @@ function AboutPage() {
         <h3>가계부</h3>
         <dl class="kv">
           <dt>릴리스</dt>
-          <dd>R5 (검색·캘린더·분류별 예산·앱 설치)</dd>
+          <dd>R6 (검색·캘린더·분류별 예산·앱 설치·재산상황)</dd>
           <dt>저장 위치</dt>
           <dd>이 기기의 브라우저(IndexedDB). 구글 로그인을 하면 내 구글 드라이브의 앱 전용 폴더에도 저장됩니다.</dd>
           <dt>데이터 형식</dt>

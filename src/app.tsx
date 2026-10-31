@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { bootBlocked, bootError, pendingFixed, ready, settings, staleTab } from './store/store';
 import {
   accountModal,
@@ -22,12 +22,16 @@ import { AccountChip, AccountModal, LogoutDialog } from './views/AccountUi';
 import { HistoryView } from './views/HistoryView';
 import { EntrySheet } from './views/EntrySheet';
 import { StatsView } from './views/StatsView';
+import { AssetsView } from './views/AssetsView';
+import { AssetSheet } from './views/AssetSheet';
+import { assetSheet, closeAssetSheet } from './ui/nav';
 import { SettingsView } from './views/SettingsView';
 import { FixedMonthWindow } from './views/FixedMonthWindow';
 
-const TABS: { id: Tab; label: string; icon: 'ReceiptText' | 'ChartColumn' | 'Settings' }[] = [
+const TABS: { id: Tab; label: string; icon: 'ReceiptText' | 'ChartColumn' | 'Landmark' | 'Settings' }[] = [
   { id: 'history', label: '사용 내역', icon: 'ReceiptText' },
-  { id: 'stats', label: '통계', icon: 'ChartColumn' },
+  { id: 'stats', label: '사용 내역 통계', icon: 'ChartColumn' },
+  { id: 'assets', label: '재산상황', icon: 'Landmark' },
   { id: 'settings', label: '설정', icon: 'Settings' },
 ];
 
@@ -41,8 +45,41 @@ function useAppearance() {
   }, [s.theme, s.fontScale]);
 }
 
+/** 탭 줄이 좁아서 넘칠 때(휴대폰): 좌우로 밀어서 이동하고, 고른 탭이 보이게 맞추며, 더 있는 쪽에 흐림 표시를 한다 */
+function useTabScroll(selected: Tab) {
+  const ref = useRef<HTMLElement>(null);
+  const [edge, setEdge] = useState({ left: false, right: false });
+  const measure = () => {
+    const el = ref.current;
+    if (!el) return;
+    const left = el.scrollLeft > 2;
+    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
+    setEdge((e) => (e.left === left && e.right === right ? e : { left, right }));
+  };
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const on = el.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (on && el.scrollWidth > el.clientWidth) {
+      const target = on.offsetLeft - (el.clientWidth - on.offsetWidth) / 2;
+      el.scrollTo({ left: Math.max(0, target), behavior: 'auto' });
+    }
+    measure();
+  }, [selected]);
+  useEffect(() => {
+    measure();
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return { ref, edge, measure };
+}
+
 function TopPanel() {
   const vp = viewport.value;
+  const { ref, edge, measure } = useTabScroll(tab.value);
   return (
     <header class="top">
       <div class="top-inner">
@@ -50,22 +87,30 @@ function TopPanel() {
           <span class="brand-mark" />
           가계부
         </div>
-        <nav class="tabs" role="tablist" aria-label="화면 선택">
+        <nav
+          class={`tabs ${edge.left ? 'more-left' : ''} ${edge.right ? 'more-right' : ''}`}
+          role="tablist"
+          aria-label="화면 선택"
+          ref={ref}
+          onScroll={measure}
+        >
           {TABS.map((t) => (
             <button
               key={t.id}
               type="button"
               role="tab"
+              data-tab={t.id}
               aria-selected={tab.value === t.id}
               class="tab"
               onClick={() => {
                 if (t.id === 'settings' && tab.value === 'settings') openSettings('lists');
                 setTab(t.id);
                 closeSheet();
+                closeAssetSheet();
               }}
             >
               <Ui name={t.icon} size={17} />
-              <span>{vp === 'mobile' ? t.label.replace('사용 ', '') : t.label}</span>
+              <span>{t.label}</span>
             </button>
           ))}
         </nav>
@@ -173,15 +218,16 @@ export function App() {
       <TopPanel />
       <main class="page" id="main">
         <div class="page-inner">
-          {t === 'history' ? <HistoryView /> : t === 'stats' ? <StatsView /> : <SettingsView />}
+          {t === 'history' ? <HistoryView /> : t === 'stats' ? <StatsView /> : t === 'assets' ? <AssetsView /> : <SettingsView />}
         </div>
       </main>
-      {vp === 'mobile' && t !== 'settings' && !sheet.value ? (
+      {vp === 'mobile' && (t === 'history' || t === 'stats') && !sheet.value ? (
         <button type="button" class="fab" aria-label="지출 입력" onClick={() => openAdd()}>
           <Ui name="Plus" size={26} />
         </button>
       ) : null}
       {sheet.value ? <EntrySheet /> : null}
+      {assetSheet.value ? <AssetSheet /> : null}
       {fixedWindow.value ? <FixedMonthWindow /> : null}
       {accountModal.value ? <AccountModal /> : null}
       {logoutDialog.value ? <LogoutDialog /> : null}

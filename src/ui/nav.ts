@@ -1,8 +1,8 @@
 import { signal } from '@preact/signals';
 import type { ListSort } from '../lib/calc';
-import { EMPTY_FILTER, type DefaultView, type Entry, type EntryFilter } from '../lib/types';
+import { EMPTY_FILTER, type AssetCategory, type DefaultView, type Entry, type EntryFilter } from '../lib/types';
 
-export type Tab = 'history' | 'stats' | 'settings';
+export type Tab = 'history' | 'stats' | 'assets' | 'settings';
 export type SettingsPage = 'fixed' | 'lists' | 'goal' | 'budget' | 'display' | 'account' | 'data' | 'about';
 export type ListsTab = 'users' | 'payMethods' | 'payDetails' | 'categories';
 
@@ -24,7 +24,7 @@ function persist(key: string, v: string) {
   }
 }
 
-export const tab = signal<Tab>(load('tab', ['history', 'stats', 'settings'], 'history'));
+export const tab = signal<Tab>(load('tab', ['history', 'stats', 'assets', 'settings'], 'history'));
 export function setTab(t: Tab) {
   tab.value = t;
   persist('tab', t);
@@ -52,10 +52,21 @@ export type SheetState =
   | { mode: 'copy'; entry: Entry };
 
 export const sheet = signal<SheetState | null>(null);
-export const openAdd = (date?: string) => (sheet.value = { mode: 'add', date });
+export const openAdd = (date?: string) => {
+  assetSheet.value = null;
+  sheet.value = { mode: 'add', date };
+};
 export const openEdit = (entry: Entry) => (sheet.value = { mode: 'edit', entry });
 export const openCopy = (entry: Entry) => (sheet.value = { mode: 'copy', entry });
 export const closeSheet = () => (sheet.value = null);
+
+/** 재산 항목 입력·상세 창. add는 새 항목(분류 미리 고르기 가능), edit는 항목 열기, copy는 복사해서 새로 */
+export type AssetSheetState = { mode: 'add'; category?: AssetCategory } | { mode: 'edit' | 'copy'; id: string };
+export const assetSheet = signal<AssetSheetState | null>(null);
+export const openAssetAdd = (category?: AssetCategory) => (assetSheet.value = { mode: 'add', category });
+export const openAssetEdit = (id: string) => (assetSheet.value = { mode: 'edit', id });
+export const openAssetCopy = (id: string) => (assetSheet.value = { mode: 'copy', id });
+export const closeAssetSheet = () => (assetSheet.value = null);
 
 export function openSettings(page: SettingsPage, list?: ListsTab) {
   settingsPage.value = page;

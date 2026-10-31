@@ -151,7 +151,7 @@ async function run(name, vp) {
   await page.locator('input[type=file]').setInputFiles(path);
   await page.locator('.modal .btn.danger').click();
   await page.waitForTimeout(400);
-  await page.locator('.tab', { hasText: /내역/ }).click();
+  await page.locator('.tab[data-tab="history"]').click();
   await page.waitForSelector('.stat-total');
   ok((await total()) === '30690', '복원 후 합계 30,690 (예정 5,000 포함)');
 

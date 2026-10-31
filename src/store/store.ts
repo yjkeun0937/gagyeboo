@@ -5,9 +5,14 @@ import { dueDate, fixedEntryId, pendingMonths, runId } from '../lib/fixed';
 import { uid } from '../lib/format';
 import type { ImportPlan } from '../lib/importer';
 import { seedCategories, seedPayMethods } from '../lib/seed';
+import { diffAsset, normalizeAsset } from '../lib/assets';
 import {
   DEFAULT_SETTINGS,
   type AppSettings,
+  type Asset,
+  type AssetLog,
+  type AssetState,
+  type EndReason,
   type Base,
   type Category,
   type Entry,
@@ -37,6 +42,10 @@ export const payMethods = signal<PayMethod[]>([]);
 export const payDetails = signal<PayDetail[]>([]);
 export const fixedItems = signal<FixedItem[]>([]);
 export const fixedRuns = signal<FixedMonthRun[]>([]);
+export const assets = signal<Asset[]>([]);
+export const assetLogs = signal<AssetLog[]>([]);
+/** 재산 항목·이력을 마지막으로 바꾼 시각(ms). 지운 기록도 포함한다. 없으면 0 */
+export const assetsUpdatedAt = signal(0);
 export const settings = signal<AppSettings>({ ...DEFAULT_SETTINGS });
 /** 이 기기에서 앱을 처음 쓴 달. 이 달 이전은 고정지출 월초 입력 대상이 아니다. */
 export const firstUseYm = signal(ymOf(todayKST()));
@@ -52,6 +61,8 @@ interface Rows {
   payDetails: PayDetail;
   fixedItems: FixedItem;
   fixedRuns: FixedMonthRun;
+  assets: Asset;
+  assetLogs: AssetLog;
 }
 
 const sigs: { [K in TableName]: Signal<Rows[K][]> } = {
@@ -62,6 +73,8 @@ const sigs: { [K in TableName]: Signal<Rows[K][]> } = {
   payDetails,
   fixedItems,
   fixedRuns,
+  assets,
+  assetLogs,
 };
 
 export const usersById = computed(() => new Map(users.value.map((u) => [u.id, u])));
@@ -102,7 +115,7 @@ export function refreshToday() {
 
 async function loadFromDb() {
   const d = db();
-  const [e, c, u, p, pd, fi, fr, st, fu] = await Promise.all([
+  const [e, c, u, p, pd, fi, fr, st, fu, as, al] = await Promise.all([
     d.entries.toArray(),
     d.categories.toArray(),
     d.users.toArray(),
@@ -112,6 +125,8 @@ async function loadFromDb() {
     d.fixedRuns.toArray(),
     d.meta.get('settings'),
     d.meta.get('firstUseYm'),
+    d.assets.toArray(),
+    d.assetLogs.toArray(),
   ]);
   const live = <T extends Base>(rows: T[]) => rows.filter((r) => !r.deleted);
   entries.value = live(e);
@@ -121,6 +136,9 @@ async function loadFromDb() {
   payDetails.value = live(pd);
   fixedItems.value = live(fi);
   fixedRuns.value = live(fr);
+  assets.value = live(as);
+  assetLogs.value = live(al);
+  assetsUpdatedAt.value = Math.max(0, ...as.map((r) => r.updatedAt), ...al.map((r) => r.updatedAt));
   if (typeof fu?.value === 'string') firstUseYm.value = fu.value;
   settings.value = { ...DEFAULT_SETTINGS, ...((st?.value as Partial<AppSettings>) ?? {}) };
 }
@@ -195,6 +213,7 @@ export async function save<T extends TableName>(table: T, item: Rows[T]): Promis
   const s = sigs[table] as Signal<Rows[T][]>;
   const rest = s.value.filter((x) => x.id !== next.id);
   s.value = next.deleted ? rest : [...rest, next];
+  if (table === 'assets' || table === 'assetLogs') assetsUpdatedAt.value = next.updatedAt;
   onLocalChange?.();
   return next;
 }
@@ -263,6 +282,7 @@ export function usageOf(table: ListTableName, id: ID): number {
       return (
         es.filter((e) => e.user === id).length +
         fx.filter((f) => f.user === id).length +
+        assets.value.filter((a) => a.owner === id).length +
         users.value.filter((u) => u.type === 'group' && u.memberIds.includes(id)).length
       );
     case 'payMethods':
@@ -397,6 +417,121 @@ export async function clearMonthRun(ym: string): Promise<void> {
   if (cur) await save('fixedRuns', { ...cur, deleted: true });
 }
 
+/* ───────── 재산상황 ───────── */
+
+export type AssetInput = Pick<
+  Asset,
+  'category' | 'name' | 'kind' | 'owner' | 'amount' | 'payStatus' | 'coverage' | 'term' | 'rate' | 'maturity' | 'tax' | 'memo' | 'inCash'
+>;
+
+/** 항목과 이력 한 줄을 함께 저장한다 (둘 다 저장되거나 둘 다 안 된다) */
+async function commitAsset(asset: Asset, log: AssetLog | null): Promise<Asset> {
+  const d = db();
+  const at = nextStamp();
+  const a: Asset = { ...asset, updatedAt: at };
+  const l = log ? { ...log, at, updatedAt: at } : null;
+  await d.transaction('rw', [d.assets, d.assetLogs], async () => {
+    await d.assets.put(a);
+    if (l) await d.assetLogs.put(l);
+  });
+  assets.value = [...assets.value.filter((x) => x.id !== a.id), a];
+  if (l) assetLogs.value = [...assetLogs.value, l];
+  assetsUpdatedAt.value = at;
+  onLocalChange?.();
+  return a;
+}
+
+const newLog = (assetId: ID, kind: AssetLog['kind'], changes: AssetLog['changes'], note: string): AssetLog => ({
+  id: uid(),
+  updatedAt: 0,
+  assetId,
+  at: 0,
+  kind,
+  changes,
+  note: note.trim(),
+});
+
+export async function addAsset(input: AssetInput, note = ''): Promise<Asset> {
+  const base = normalizeAsset({
+    ...input,
+    id: uid(),
+    updatedAt: 0,
+    state: 'active' as AssetState,
+    endReason: null,
+    endedOn: null,
+    createdAt: nextStamp(),
+  });
+  return commitAsset(base, newLog(base.id, 'create', diffAsset(null, base), note));
+}
+
+export interface AssetUndo {
+  prev: Asset;
+  logId: ID;
+}
+
+/** 수정한다. 바뀐 것이 없으면 null. 바뀌었으면 되돌릴 때 쓸 정보를 돌려준다 */
+export async function updateAsset(id: ID, patch: Partial<AssetInput>, note = ''): Promise<AssetUndo | null> {
+  const prev = assets.value.find((a) => a.id === id);
+  if (!prev) return null;
+  const next = normalizeAsset({ ...prev, ...patch });
+  const changes = diffAsset(prev, next);
+  if (!changes.length) return null;
+  const log = newLog(id, 'edit', changes, note);
+  await commitAsset(next, log);
+  return { prev, logId: log.id };
+}
+
+/** 보유 ↔ 종료 ↔ 휴지통. 종료로 옮길 때만 사유·종료일을 기록한다 */
+export async function setAssetState(
+  id: ID,
+  to: AssetState,
+  opts: { reason?: EndReason; endedOn?: string; note?: string } = {},
+): Promise<AssetUndo | null> {
+  const prev = assets.value.find((a) => a.id === id);
+  if (!prev || prev.state === to) return null;
+  const next: Asset = {
+    ...prev,
+    state: to,
+    endReason: to === 'ended' ? (opts.reason ?? 'other') : null,
+    endedOn: to === 'ended' ? (opts.endedOn ?? today.value) : null,
+  };
+  const log = newLog(id, 'state', diffAsset(prev, next), opts.note ?? '');
+  await commitAsset(next, log);
+  return { prev, logId: log.id };
+}
+
+/** 방금 한 수정·상태 변경을 취소한다: 이전 값을 되돌리고 그 이력 한 줄을 지운다 */
+export async function undoAssetChange(u: AssetUndo): Promise<void> {
+  const l = assetLogs.value.find((x) => x.id === u.logId);
+  const d = db();
+  const at = nextStamp();
+  await d.transaction('rw', [d.assets, d.assetLogs], async () => {
+    await d.assets.put({ ...u.prev, updatedAt: at });
+    if (l) await d.assetLogs.put({ ...l, deleted: true, updatedAt: at });
+  });
+  assets.value = [...assets.value.filter((x) => x.id !== u.prev.id), { ...u.prev, updatedAt: at }];
+  assetLogs.value = assetLogs.value.filter((x) => x.id !== u.logId);
+  assetsUpdatedAt.value = at;
+  onLocalChange?.();
+}
+
+/** 완전 삭제: 항목과 이력을 모두 지운다 (다른 기기에서도 지워진다) */
+export async function purgeAsset(id: ID): Promise<void> {
+  const a = assets.value.find((x) => x.id === id);
+  if (!a) return;
+  const d = db();
+  const at = nextStamp();
+  const logs = assetLogs.value.filter((l) => l.assetId === id);
+  await d.transaction('rw', [d.assets, d.assetLogs], async () => {
+    await d.assets.put({ ...a, deleted: true, updatedAt: at });
+    await d.assetLogs.bulkPut(logs.map((l) => ({ ...l, deleted: true, updatedAt: at })));
+  });
+  assets.value = assets.value.filter((x) => x.id !== id);
+  assetLogs.value = assetLogs.value.filter((l) => l.assetId !== id);
+  assetsUpdatedAt.value = at;
+  onLocalChange?.();
+}
+
 /* ───────── 설정 ───────── */
 
 export async function updateSettings(patch: Partial<AppSettings>) {
@@ -425,11 +560,14 @@ export interface BackupFile {
   /** v2부터. v1 백업에는 없다 */
   fixedItems?: FixedItem[];
   fixedRuns?: FixedMonthRun[];
+  /** v3부터. 이전 백업에는 없다 */
+  assets?: Asset[];
+  assetLogs?: AssetLog[];
 }
 
 export async function exportAll(): Promise<BackupFile> {
   const d = db();
-  const [e, c, u, p, pd, fi, fr] = await Promise.all([
+  const [e, c, u, p, pd, fi, fr, as, al] = await Promise.all([
     d.entries.toArray(),
     d.categories.toArray(),
     d.users.toArray(),
@@ -437,6 +575,8 @@ export async function exportAll(): Promise<BackupFile> {
     d.payDetails.toArray(),
     d.fixedItems.toArray(),
     d.fixedRuns.toArray(),
+    d.assets.toArray(),
+    d.assetLogs.toArray(),
   ]);
   return {
     app: 'gagyeboo',
@@ -450,6 +590,8 @@ export async function exportAll(): Promise<BackupFile> {
     payDetails: pd,
     fixedItems: fi,
     fixedRuns: fr,
+    assets: as,
+    assetLogs: al,
   };
 }
 
@@ -461,7 +603,7 @@ export function validateBackup(data: unknown): data is BackupFile {
   for (const k of ['entries', 'categories', 'users', 'payMethods', 'payDetails']) {
     if (!Array.isArray(b[k])) return false;
   }
-  for (const k of ['fixedItems', 'fixedRuns']) {
+  for (const k of ['fixedItems', 'fixedRuns', 'assets', 'assetLogs']) {
     if (b[k] !== undefined && !Array.isArray(b[k])) return false;
   }
   return (b.entries as Entry[]).every(
@@ -469,17 +611,18 @@ export function validateBackup(data: unknown): data is BackupFile {
   );
 }
 
-const ALL_TABLES: TableName[] = ['entries', 'categories', 'users', 'payMethods', 'payDetails', 'fixedItems', 'fixedRuns'];
+const ALL_TABLES: TableName[] = ['entries', 'categories', 'users', 'payMethods', 'payDetails', 'fixedItems', 'fixedRuns', 'assets', 'assetLogs'];
 
 /**
  * 모든 표를 `rows`로 바꾼다. 기기 간 동기화에서 '지금 이 상태가 최신'으로 인정받도록,
  * 새 내용은 지금 시각으로 다시 찍고 사라지는 기록은 삭제 표시로 남긴다 (그냥 지우면 드라이브에서 되살아난다).
  */
-async function replaceAllRows(rows: { [K in TableName]?: Base[] }): Promise<void> {
+async function replaceAllRows(rows: { [K in TableName]?: Base[] }, leave: TableName[] = []): Promise<void> {
   const d = db();
   const now = Date.now();
-  await d.transaction('rw', [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns], async () => {
+  await d.transaction('rw', [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns, d.assets, d.assetLogs], async () => {
     for (const t of ALL_TABLES) {
+      if (leave.includes(t)) continue;
       const table = d[t] as unknown as {
         toArray(): Promise<Base[]>;
         clear(): Promise<void>;
@@ -505,7 +648,9 @@ export async function importAll(data: BackupFile): Promise<void> {
     payDetails: data.payDetails,
     fixedItems: data.fixedItems ?? [],
     fixedRuns: data.fixedRuns ?? [],
-  });
+    assets: data.assets ?? [],
+    assetLogs: data.assetLogs ?? [],
+  }, data.assets ? [] : ['assets', 'assetLogs']); // 재산상황이 없는 이전 백업은 지금의 재산상황을 건드리지 않는다
   await d.meta.put({ key: 'seeded', value: true });
   if (data.settings) {
     await d.meta.put({ key: 'settings', value: data.settings });
@@ -538,8 +683,10 @@ export async function resetAll(): Promise<void> {
  */
 export async function wipeLocalOnly(): Promise<void> {
   const d = db();
-  await d.transaction('rw', [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns, d.meta], async () => {
+  await d.transaction('rw', [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns, d.assets, d.assetLogs, d.meta], async () => {
     await Promise.all([
+      d.assets.clear(),
+      d.assetLogs.clear(),
       d.entries.clear(),
       d.categories.clear(),
       d.users.clear(),

@@ -143,7 +143,7 @@ const amounts = (page, mobile) =>
   await page.reload(); await page.waitForSelector('.app');
   await page.waitForTimeout(500);
   if (await page.locator('.modal.is-wide').count()) { await page.keyboard.press('Escape'); await page.waitForTimeout(200); }
-  await page.locator('.tab', { hasText: '내역' }).click(); await page.waitForTimeout(300);
+  await page.locator('.tab[data-tab="history"]').click(); await page.waitForTimeout(300);
   ok((await page.locator('.cal-grid').count()) === 1, '기본 보기를 캘린더로 → 새로고침 후 캘린더로 시작');
   await page.locator('.view-toggle').click(); await page.waitForTimeout(200);
   ok((await page.locator('.ledger').count()) === 1, '버튼으로 목록 전환');
@@ -163,7 +163,7 @@ const amounts = (page, mobile) =>
   await page.locator('.tab', { hasText: '설정' }).click();
   await page.locator('.side-item', { hasText: '분류별 예산' }).click(); await page.waitForTimeout(200);
   ok((await page.locator('.budget-row input').first().inputValue()) === '1,000', '예산이 새로고침 후에도 유지');
-  await page.locator('.tab', { hasText: '내역' }).click(); await page.waitForTimeout(300);
+  await page.locator('.tab[data-tab="history"]').click(); await page.waitForTimeout(300);
   ok((await page.locator('.sum-chip .bud-flag').count()) > 0, '분류 칩에 빨간 느낌표(한도 초과)');
   ok((await page.locator('.sum-chip.has-budget .bud-meter').count()) > 0, '분류 칩에 진행률 바');
   await page.locator('.tab', { hasText: '통계' }).click(); await page.waitForTimeout(500);

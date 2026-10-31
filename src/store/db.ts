@@ -1,5 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 import type {
+  Asset,
+  AssetLog,
   Category,
   Entry,
   FixedItem,
@@ -25,6 +27,8 @@ export class LedgerDB extends Dexie {
   payDetails!: Table<PayDetail, string>;
   fixedItems!: Table<FixedItem, string>;
   fixedRuns!: Table<FixedMonthRun, string>;
+  assets!: Table<Asset, string>;
+  assetLogs!: Table<AssetLog, string>;
   meta!: Table<MetaRow, string>;
 
   constructor(name: string) {
@@ -48,11 +52,24 @@ export class LedgerDB extends Dexie {
       fixedRuns: 'id',
       meta: 'key',
     });
+    // v3: 재산상황(항목과 변경 이력) 추가. 기존 데이터는 그대로 둔다.
+    this.version(3).stores({
+      entries: 'id, date, updatedAt',
+      categories: 'id',
+      users: 'id',
+      payMethods: 'id',
+      payDetails: 'id',
+      fixedItems: 'id',
+      fixedRuns: 'id',
+      assets: 'id, state',
+      assetLogs: 'id, assetId, at',
+      meta: 'key',
+    });
   }
 }
 
 /** 저장 형식 버전. 백업 파일에도 기록된다. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 let current: LedgerDB | null = null;
 
