@@ -3575,3 +3575,123 @@ html.kb-open .fab {
     justify-content: center;
   }
 }
+
+/* 날짜 직접 입력 */
+.date-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.date-field .input {
+  padding-right: 44px;
+}
+.date-field .date-pick {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.date-field .date-native {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  border: 0;
+  padding: 0;
+}
+
+/* ───────── 위쪽 조작 영역 고정 + 아래쪽 목록만 스크롤 (데스크탑) ───────── */
+/* 데스크탑이 아니면 .split 래퍼는 없는 것과 같다(쪽 전체가 스크롤) */
+.split,
+.split-top,
+.split-body {
+  display: contents;
+}
+@media (min-width: 1025px) {
+  .app {
+    height: 100dvh;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .app > .top,
+  .app > .stale-banner,
+  .app > .update-banner {
+    flex: none;
+  }
+  .page {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: 16px;
+  }
+  .page-inner:has(.split),
+  .history,
+  .stats-view,
+  .assets-view {
+    height: 100%;
+  }
+  .split {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    height: 100%;
+    min-height: 0;
+  }
+  .split-top {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    flex: 0 1 auto;
+    max-height: max(40%, calc(100% - 240px));
+    overflow-y: auto;
+    min-height: 0;
+    padding: 2px;
+    margin: -2px;
+  }
+  .split-top > * {
+    flex: none;
+  }
+  .split-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .split-body > * {
+    flex: none;
+  }
+  .split-body .ledger .row.head {
+    top: 0;
+  }
+  .split-body .day,
+  .split-body [data-date] {
+    scroll-margin-top: 40px;
+  }
+  .side-menu {
+    top: 0;
+  }
+  /* 설정 → 목록: 종류 탭은 고정, 목록만 스크롤 */
+  .settings.is-split:has(.split) {
+    height: 100%;
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .settings-detail:has(.split) {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .settings-detail:has(.split) > .lists {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+  .lists > .split {
+    height: 100%;
+  }
+}

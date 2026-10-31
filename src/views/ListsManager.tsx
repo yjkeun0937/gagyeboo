@@ -1,3 +1,4 @@
+import { Split } from '../ui/parts';
 import { useState } from 'preact/hooks';
 import type { Category, ID, ListTableName, PayDetail, PayMethod, User } from '../lib/types';
 import { uid } from '../lib/format';
@@ -545,6 +546,9 @@ export function ListsManager() {
 
   return (
     <div class="lists">
+     <Split
+      resetKey={tab}
+      top={
       <div class="subtabs" role="tablist" aria-label="목록 종류">
         {(Object.keys(TAB_LABEL) as ListsTab[]).map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tab === t} class="subtab" onClick={() => (listsTab.value = t)}>
@@ -552,6 +556,8 @@ export function ListsManager() {
           </button>
         ))}
       </div>
+      }
+     >
 
       {tab === 'users' ? (
         <>
@@ -707,6 +713,7 @@ export function ListsManager() {
         </>
       ) : null}
 
+     </Split>
       {editor?.kind === 'user' ? <UserEditor type={editor.type} initial={editor.item} onClose={close} /> : null}
       {editor?.kind === 'pay' ? <PayMethodEditor initial={editor.item} onClose={close} /> : null}
       {editor?.kind === 'detail' ? <PayDetailEditor initial={editor.item} onClose={close} /> : null}

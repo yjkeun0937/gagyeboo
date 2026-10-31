@@ -40,7 +40,7 @@ import {
 import { CategoryDot, PayGlyph, Ui, UserGlyph } from '../ui/icons';
 import { filter, historyView, openEdit, searchAllPeriod, searchOpen, setTab } from '../ui/nav';
 import { MonthNav } from '../ui/monthnav';
-import { Empty } from '../ui/parts';
+import { Empty, Split } from '../ui/parts';
 
 type StatsTab = 'month' | 'year' | 'all' | 'range';
 const statsTab = signal<StatsTab>('month');
@@ -499,16 +499,15 @@ function MonthlyStats() {
   const ym = viewMonth.value;
   const s = useMemo(() => monthStats(entries.value, ym, today.value), [entries.value, ym, today.value]);
   return (
-    <>
-      <div class="monthbar">
-        <MonthNav />
-      </div>
-      {s.count === 0 ? (
-        <Empty title={`${formatYm(ym)}에는 집계할 내역이 없습니다`}>
-          <p class="hint">[보류] 내역은 통계에 포함되지 않습니다.</p>
-        </Empty>
-      ) : (
+    <Split
+      resetKey={`m${ym}`}
+      top={
         <>
+          <StatsHeader />
+          <div class="monthbar">
+            <MonthNav />
+          </div>
+          {s.count > 0 ? (
           <Tiles
             items={[
               {
@@ -526,6 +525,16 @@ function MonthlyStats() {
               },
             ]}
           />
+          ) : null}
+        </>
+      }
+    >
+      {s.count === 0 ? (
+        <Empty title={`${formatYm(ym)}에는 집계할 내역이 없습니다`}>
+          <p class="hint">[보류] 내역은 통계에 포함되지 않습니다.</p>
+        </Empty>
+      ) : (
+        <>
           <div class="stat-grid">
             <CategoryCard s={s} />
             <BudgetCard s={s} />
@@ -539,7 +548,7 @@ function MonthlyStats() {
           </div>
         </>
       )}
-    </>
+    </Split>
   );
 }
 
@@ -592,7 +601,11 @@ function YearlyStats() {
     }));
 
   return (
-    <>
+    <Split
+      resetKey={`y${year}`}
+      top={
+        <>
+          <StatsHeader />
       <div class="monthbar">
         <div class="monthnav">
           <button type="button" class="icon-btn" aria-label="전년" onClick={() => (statsYear.value = year - 1)}>
@@ -604,10 +617,7 @@ function YearlyStats() {
           </button>
         </div>
       </div>
-      {y.total === 0 ? (
-        <Empty title={`${year}년에는 집계할 내역이 없습니다`} />
-      ) : (
-        <>
+          {y.total > 0 ? (
           <Tiles
             items={[
               { label: '연 합계', value: <span class="num">{wonText(y.total)}</span> },
@@ -619,6 +629,14 @@ function YearlyStats() {
               },
             ]}
           />
+          ) : null}
+        </>
+      }
+    >
+      {y.total === 0 ? (
+        <Empty title={`${year}년에는 집계할 내역이 없습니다`} />
+      ) : (
+        <>
           <Card
             title="월별 지출 (분류별 누적)"
             note="분류 버튼을 누를 때마다 선택 안 함 → 위쪽(파랑) → 아래쪽(빨강) 순으로 바뀝니다. 아래쪽으로 고른 분류는 0선 아래에 쌓이며, 금액은 모두 양수로 표시됩니다."
@@ -765,7 +783,7 @@ function YearlyStats() {
           </Card>
         </>
       )}
-    </>
+    </Split>
   );
 }
 
@@ -777,13 +795,23 @@ function AllPeriodStats() {
     () => allPeriodStats(entries.value, today.value, order),
     [entries.value, today.value, categoriesSorted.value],
   );
-  if (!a.years.length) return <Empty title="집계할 내역이 없습니다" />;
+  if (!a.years.length) {
+    return (
+      <Split top={<StatsHeader />} resetKey="a">
+        <Empty title="집계할 내역이 없습니다" />
+      </Split>
+    );
+  }
   const first = a.years[0];
   const last = a.years[a.years.length - 1];
   const peakText = a.peak ? `${a.peak.ym.slice(0, 4)}년 ${monthNum(a.peak.ym)}월` : '-';
 
   return (
-    <>
+    <Split
+      resetKey="a"
+      top={
+        <>
+          <StatsHeader />
       <Tiles
         wide
         items={[
@@ -811,9 +839,12 @@ function AllPeriodStats() {
           },
         ]}
       />
+        </>
+      }
+    >
       <Card
         title="연도별 요약"
-        note="월평균은 지난 해는 12개월, 올해는 이번 달까지, 그 밖의 해는 내역이 있는 마지막 달까지로 나눕니다."
+        note="월평균은 내역이 한 건도 없는 달을 뺀 개월 수로 나눕니다(지난 해는 1~12월, 올해는 이번 달까지, 그 밖의 해는 내역이 있는 마지막 달까지 중에서)."
       >
         <div class="matrix-wrap">
           <table class="matrix all-years">
@@ -932,7 +963,7 @@ function AllPeriodStats() {
           </table>
         </div>
       </Card>
-    </>
+    </Split>
   );
 }
 
@@ -963,7 +994,11 @@ function RangeStats() {
   const shown = r.entries.slice(0, rangeLimit.value);
 
   return (
-    <>
+    <Split
+      resetKey={`r${start}|${end}|${JSON.stringify(f)}`}
+      top={
+        <>
+          <StatsHeader />
       <section class="stat-card range-form">
         <div class="range-dates">
           <div class="field">
@@ -1084,10 +1119,7 @@ function RangeStats() {
         {swapped ? <p class="hint warn">시작일이 종료일보다 늦어서 두 날짜를 바꿔 계산했습니다.</p> : null}
       </section>
 
-      {!valid ? null : r.count === 0 ? (
-        <Empty title="조건에 맞는 내역이 없습니다" />
-      ) : (
-        <>
+          {valid && r.count > 0 ? (
           <Tiles
             items={[
               {
@@ -1102,6 +1134,14 @@ function RangeStats() {
               },
             ]}
           />
+          ) : null}
+        </>
+      }
+    >
+      {!valid ? null : r.count === 0 ? (
+        <Empty title="조건에 맞는 내역이 없습니다" />
+      ) : (
+        <>
           <div class="stat-grid">
             <Card title="분류별 합계">
               <RankedBars total={r.total} items={sliceItems(r.byCategory, catName, catColor)} />
@@ -1132,16 +1172,17 @@ function RangeStats() {
           </div>
         </>
       )}
-    </>
+    </Split>
   );
 }
 
 /* ───────── 화면 ───────── */
 
-export function StatsView() {
+/** 통계 화면 맨 위의 종류 탭과 안내 (각 통계의 고정 영역 맨 앞에 들어간다) */
+function StatsHeader() {
   const tab = statsTab.value;
   return (
-    <div class="stats-view">
+    <>
       <div class="subtabs" role="tablist" aria-label="통계 종류">
         {(Object.keys(TAB_LABEL) as StatsTab[]).map((k) => (
           <button
@@ -1157,15 +1198,15 @@ export function StatsView() {
         ))}
       </div>
       <p class="hint stats-note">[보류] 내역은 모든 통계에서 제외됩니다. [예정] 내역은 포함됩니다.</p>
-      {tab === 'month' ? (
-        <MonthlyStats />
-      ) : tab === 'year' ? (
-        <YearlyStats />
-      ) : tab === 'all' ? (
-        <AllPeriodStats />
-      ) : (
-        <RangeStats />
-      )}
+    </>
+  );
+}
+
+export function StatsView() {
+  const tab = statsTab.value;
+  return (
+    <div class="stats-view">
+      {tab === 'month' ? <MonthlyStats /> : tab === 'year' ? <YearlyStats /> : tab === 'all' ? <AllPeriodStats /> : <RangeStats />}
     </div>
   );
 }

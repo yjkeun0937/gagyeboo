@@ -19,7 +19,7 @@ import { assetLogs, assets, assetsUpdatedAt, showToast, setAssetState, today, un
 import { LineChart, type Tip } from '../ui/charts';
 import { Ui } from '../ui/icons';
 import { openAssetAdd, openAssetCopy, openAssetEdit } from '../ui/nav';
-import { Empty } from '../ui/parts';
+import { Empty, Split } from '../ui/parts';
 import { viewport } from '../ui/viewport';
 
 /** 지금 표시 중인 상태. 처음에는 보유만 켜져 있고, 최소 하나는 켜 둔다 */
@@ -273,6 +273,10 @@ export function AssetsView() {
 
   return (
     <div class="assets-view">
+     <Split
+      resetKey={shown.value.join(",")}
+      top={
+       <>
       <div class="assets-head">
         <h2>재산상황</h2>
         <button type="button" class="btn primary" onClick={() => openAssetAdd()}>
@@ -307,7 +311,9 @@ export function AssetsView() {
           </button>
         ))}
       </div>
-
+       </>
+      }
+     >
       {all.length === 0 ? (
         <Empty title="아직 등록한 재산 항목이 없습니다">
           <p>예금·보험·부동산 같은 재산을 등록하면 총계와 변경 이력을 볼 수 있습니다.</p>
@@ -320,6 +326,7 @@ export function AssetsView() {
       )}
 
       <TrendAccordion />
+     </Split>
     </div>
   );
 }

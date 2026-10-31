@@ -58,7 +58,7 @@ async function run(name, vp) {
   await add({ cat: '보험', name: '예시생명', kind: '종신', amount: null });
   ok((await tile(0)) === '630000000', '보유 총계 630,000,000');
   ok((await tile(1)) === '30000000', '현금 총계 30,000,000 (부동산·보험은 제외)');
-  ok((await page.locator('.assets-view > .hint').first().innerText()).includes('1건'), '금액 미정 1건 안내');
+  ok((await page.locator('.assets-view .hint').first().innerText()).includes('1건'), '금액 미정 1건 안내');
   const upd = await page.locator('.assets-view .tile').nth(2).locator('.tile-value').innerText();
   ok(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(upd.trim()), `최종 업데이트 시각 표시 (${upd.trim()})`);
   const cats = await page.locator('.asset-cat h4').allInnerTexts();
@@ -133,7 +133,7 @@ async function run(name, vp) {
   // 추이 아코디언: 맨 아래, 기본 접힘
   const tr = page.locator('.asset-trend');
   ok((await tr.evaluate((d) => d.open)) === false, '총액 추이는 기본으로 접힘');
-  ok(await page.evaluate(() => { const v = document.querySelector('.assets-view'); return v.lastElementChild.classList.contains('asset-trend'); }), '총액 추이는 맨 아래');
+  ok(await page.evaluate(() => { const v = document.querySelector('.assets-view .split-body') || document.querySelector('.assets-view'); return v.lastElementChild.classList.contains('asset-trend'); }), '총액 추이는 맨 아래');
   await tr.locator('summary').click();
   ok((await tr.innerText()).length > 10, '추이 펼침');
 

@@ -90,21 +90,32 @@ describe('연간 표', () => {
     e('2025-12-31', 700),
     e('2026-04-01', 300, { category: null }),
   ];
-  it('분류 × 월 합계와 월평균·비율 (올해는 이번 달까지로 나눔)', () => {
+  it('분류 × 월 합계와 월평균·비율 (내역이 있는 달만 센다)', () => {
     const y = yearStats(all, 2026, TODAY, ['c1', 'c2']);
     expect(y.rows.map((r) => r.category)).toEqual(['c1', 'c2', null]);
     expect(y.rows[0].months.slice(0, 4)).toEqual([500, 0, 2500, 0]);
     expect(y.total).toBe(4300);
-    expect(y.monthsCounted).toBe(10);
-    expect(y.avg).toBe(430);
+    expect(y.monthsCounted).toBe(3); // 1·3·4월
+    expect(y.avg).toBeCloseTo(4300 / 3);
     expect(y.rows[1].share).toBeCloseTo(1000 / 4300);
     expect(y.peakMonth).toBe(3);
     expect(y.monthTotals.reduce((a, b) => a + b, 0)).toBe(y.total);
   });
-  it('지난 해는 12로 나눈다', () => {
+  it('내역이 없는 달은 빼고 나눈다 (지난 해: 12월만 있으면 1개월)', () => {
     const y = yearStats(all, 2025, TODAY, ['c1']);
-    expect(y.monthsCounted).toBe(12);
-    expect(y.avg).toBeCloseTo(700 / 12);
+    expect(y.monthsCounted).toBe(1);
+    expect(y.avg).toBe(700);
+  });
+  it('2·3월에 입력이 없는 해는 10으로 나눈다', () => {
+    const rows = [1, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => e(`2025-${String(m).padStart(2, '0')}-10`, 1000));
+    const y = yearStats(rows, 2025, TODAY, ['c1']);
+    expect(y.monthsCounted).toBe(10);
+    expect(y.avg).toBe(1000);
+  });
+  it('내역이 없는 해는 0개월·평균 0', () => {
+    const y = yearStats(all, 2024, TODAY, ['c1']);
+    expect(y.monthsCounted).toBe(0);
+    expect(y.avg).toBe(0);
   });
 });
 

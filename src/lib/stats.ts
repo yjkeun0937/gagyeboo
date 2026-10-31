@@ -176,7 +176,8 @@ export interface YearStats {
 
 /**
  * 엑셀 `월별분류별` 시트에 해당하는 분류 × 월 표.
- * 월평균 = 연 합계 ÷ (지난 해는 12, 올해는 이번 달까지, 미래 해는 내역이 있는 마지막 달까지).
+ * 월평균 = 연 합계 ÷ 기준 월 수. 기준 월은 (지난 해는 1~12월, 올해는 1월~이번 달, 미래 해는 1월~내역이 있는 마지막 달) 중
+ * **내역이 한 건이라도 있는 달**만 센다(입력을 전혀 안 한 달은 제외).
  * 행 순서는 categoryOrder(설정의 분류 순서)를 따르고, 미분류는 맨 아래.
  */
 export function yearStats(all: Entry[], year: number, today: string, categoryOrder: ID[]): YearStats {
@@ -184,6 +185,7 @@ export function yearStats(all: Entry[], year: number, today: string, categoryOrd
   const map = new Map<ID | null, number[]>();
   const monthTotals = Array.from({ length: 12 }, () => 0);
   let lastMonthWithData = 0;
+  const hasData = Array.from({ length: 12 }, () => false);
   for (const e of live) {
     const m = monthNum(ymOf(e.date)) - 1;
     const arr = map.get(e.category) ?? Array.from({ length: 12 }, () => 0);
@@ -191,9 +193,12 @@ export function yearStats(all: Entry[], year: number, today: string, categoryOrd
     map.set(e.category, arr);
     monthTotals[m] += e.amount;
     lastMonthWithData = Math.max(lastMonthWithData, m + 1);
+    hasData[m] = true;
   }
   const ty = Number(today.slice(0, 4));
-  const monthsCounted = year < ty ? 12 : year === ty ? monthNum(ymOf(today)) : Math.max(1, lastMonthWithData);
+  const span = year < ty ? 12 : year === ty ? monthNum(ymOf(today)) : lastMonthWithData;
+  const monthsCounted = hasData.slice(0, span).filter(Boolean).length;
+  const div = Math.max(1, monthsCounted);
   const total = monthTotals.reduce((a, b) => a + b, 0);
 
   const order = new Map(categoryOrder.map((id, i) => [id, i]));
@@ -205,7 +210,7 @@ export function yearStats(all: Entry[], year: number, today: string, categoryOrd
   const rows: YearRow[] = keys.map((category) => {
     const months = map.get(category)!;
     const t = months.reduce((a, b) => a + b, 0);
-    return { category, months, total: t, avg: t / monthsCounted, share: total ? t / total : 0 };
+    return { category, months, total: t, avg: t / div, share: total ? t / total : 0 };
   });
   const peak = monthTotals.reduce((best, v, i) => (v > monthTotals[best] ? i : best), 0);
   return {
@@ -214,7 +219,7 @@ export function yearStats(all: Entry[], year: number, today: string, categoryOrd
     monthTotals,
     total,
     monthsCounted,
-    avg: total / monthsCounted,
+    avg: total / div,
     peakMonth: total > 0 ? peak + 1 : 0,
   };
 }

@@ -31,6 +31,7 @@ import {
 } from '../store/store';
 import { Ui, UserGlyph } from '../ui/icons';
 import { closeAssetSheet, assetSheet } from '../ui/nav';
+import { DateField } from '../ui/DateField';
 import { askConfirm, Sheet } from '../ui/overlay';
 import { Chip } from './EntrySheet';
 
@@ -446,7 +447,7 @@ export function AssetSheet() {
         {optional.includes('maturity') ? (
           <div class="field">
             <label for="a-mat">만기일</label>
-            <input id="a-mat" class="input" type="date" value={form.maturity} onInput={(e) => set({ maturity: e.currentTarget.value })} />
+            <DateField id="a-mat" value={form.maturity} onChange={(v) => set({ maturity: v })} />
           </div>
         ) : null}
         {optional.includes('tax') ? (
@@ -540,7 +541,7 @@ export function AssetSheet() {
                     ))}
                   </div>
                   <label class="small-label" for="a-endon">종료일</label>
-                  <input id="a-endon" class="input" type="date" value={endPanel.endedOn} onInput={(e) => setEndPanel({ ...endPanel, endedOn: e.currentTarget.value })} />
+                  <DateField id="a-endon" value={endPanel.endedOn} onChange={(v) => setEndPanel({ ...endPanel, endedOn: v })} />
                   <button
                     type="button"
                     class="btn primary"

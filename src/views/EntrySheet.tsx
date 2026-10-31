@@ -28,6 +28,7 @@ import {
 import { uid } from '../lib/format';
 import { CategoryDot, COLOR_CHOICES, PayGlyph, Ui, UserGlyph } from '../ui/icons';
 import { closeSheet, openCopy, sheet } from '../ui/nav';
+import { DateField } from '../ui/DateField';
 import { askConfirm, Sheet, showWarning } from '../ui/overlay';
 
 interface Form {
@@ -546,13 +547,7 @@ export function EntrySheet() {
       >
         <div class="field">
           <label for="f-date">날짜</label>
-          <input
-            id="f-date"
-            class="input"
-            type="date"
-            value={form.date}
-            onInput={(e) => set({ date: e.currentTarget.value })}
-          />
+          <DateField id="f-date" value={form.date} onChange={(v) => set({ date: v })} />
           {isValidYmd(form.date) && form.date > today.value ? (
             <span class="hint">오늘 이후 날짜 — [예정]으로 표시됩니다</span>
           ) : null}

@@ -57,7 +57,7 @@ import { MonthNav } from '../ui/monthnav';
 import { CalendarView } from './CalendarView';
 import { EntryCard, Hl, rowKey } from './EntryCard';
 import { showPopover } from '../ui/overlay';
-import { Empty, Pills } from '../ui/parts';
+import { Empty, Pills, Split } from '../ui/parts';
 import { iconMode, viewport } from '../ui/viewport';
 
 /* ───────── 월 이동 ───────── */
@@ -893,12 +893,18 @@ export function HistoryView() {
 
   return (
     <div class="history">
-      <MonthBar />
-      <AlertChips estimateCount={estimateCount} />
-      {!allPeriod ? <Summary s={summary} ym={ym} /> : null}
-      <Breakdown s={allPeriod ? null : summary} hasList={groups.length > 0} calendar={calendar} />
-      <FilterBar resultCount={list.length} resultTotal={resultTotal} pendingCount={pendingCount} calendar={calendar} />
-
+     <Split
+      resetKey={[ym, JSON.stringify(f), calendar, allPeriod, sort, ls ? `${ls.key}${ls.dir}` : '', fd, revealFuture.value].join('|')}
+      top={
+        <>
+          <MonthBar />
+          <AlertChips estimateCount={estimateCount} />
+          {!allPeriod ? <Summary s={summary} ym={ym} /> : null}
+          <Breakdown s={allPeriod ? null : summary} hasList={groups.length > 0} calendar={calendar} />
+          <FilterBar resultCount={list.length} resultTotal={resultTotal} pendingCount={pendingCount} calendar={calendar} />
+        </>
+      }
+     >
       {entries.value.length === 0 ? (
         <Empty title="아직 기록이 없습니다">
           <p>
@@ -962,6 +968,7 @@ export function HistoryView() {
       ) : (
         <TableList groups={groups} withYear={allPeriod} query={query} />
       )}
+     </Split>
     </div>
   );
 }

@@ -37,7 +37,7 @@ describe('전체 기간 통계', () => {
   });
   it('연도별 요약', () => {
     const y24 = r.yearRows[0];
-    expect(y24).toMatchObject({ year: 2024, total: 4000, monthsCounted: 12, peakMonth: 3, peakAmount: 3000 });
+    expect(y24).toMatchObject({ year: 2024, total: 4000, monthsCounted: 2, peakMonth: 3, peakAmount: 3000 });
     expect(y24.top).toEqual({ category: 'b', total: 3000 });
     expect(r.yearRows[1].top).toBeNull();
     expect(r.yearRows[1].peakMonth).toBe(0);
@@ -54,9 +54,9 @@ describe('전체 기간 통계', () => {
   it('가장 많은 달·분류, 월평균', () => {
     expect(r.peak).toEqual({ ym: '2024-03', amount: 3000 });
     expect(r.top).toEqual({ category: 'b', total: 3000 });
-    // 2024: 12개월, 2025: 12개월, 2026: 올해는 10월까지
-    expect(r.monthsCounted).toBe(34);
-    expect(r.avg).toBeCloseTo(7700 / 34);
+    // 내역이 있는 달만: 2024 → 3·12월, 2025 → 없음, 2026 → 1·10월
+    expect(r.monthsCounted).toBe(4);
+    expect(r.avg).toBeCloseTo(7700 / 4);
   });
   it('내역이 없으면 빈 결과', () => {
     const e = allPeriodStats([], today, []);
