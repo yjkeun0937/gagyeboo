@@ -41,10 +41,8 @@ async function run(name, vp) {
   d = await groupDates();
   ok(d[0] < d[d.length - 1], '정렬 버튼 → 오름차순');
   await page.reload(); await page.waitForSelector('.ledger, .cards'); await page.waitForTimeout(400);
-  ok((await page.locator('.modal.is-wide').count()) === 1, '앱 시작 시 미처리 고정지출 창이 자동으로 열림');
-  await page.locator('.modal.is-wide .btn', { hasText: '나중에' }).click(); await page.waitForTimeout(250);
-  ok((await page.locator('.modal.is-wide').count()) === 0, '"나중에"로 닫힘');
-  ok((await page.locator('.alert-chip.is-warn').count()) === 1, '닫아도 알림 칩은 남음');
+  ok((await page.locator('.modal').count()) === 0, '앱 시작 시 입력 대기 창은 자동으로 열리지 않음');
+  ok((await page.locator('.queue-btn:visible, .queue-fab:visible').count()) === 1, '입력 대기 버튼은 남아 있음');
   d = await groupDates();
   ok(d[0] < d[d.length - 1], '정렬 선택이 새로고침 후에도 유지');
   await flipSort(false);
@@ -93,24 +91,26 @@ async function run(name, vp) {
   await gotoSettings('화면');
   await page.locator('.segmented button, .segmented label', { hasText: '모든 내역' }).first().click();
 
-  // 4) 고정지출: 알림 칩 → 창 → 추가
+  // 4) 입력 대기: 버튼 → 창 → 선택 → 적용
   await toHistory();
-  const chip = page.locator('.alert-chip.is-warn');
-  ok((await chip.count()) === 1, '고정지출 미처리 알림 칩');
-  await chip.click();
-  await page.waitForSelector('.modal.is-wide');
-  await page.screenshot({ path: `e2e/out/r2f-${name}-fixedwin.png` });
-  const rows = await page.locator('.fw-row').count();
-  const added = await page.locator('.fw-row.is-added').count();
-  console.log(`  rows ${rows}, added ${added}`);
-  ok(rows >= 3, '고정지출 항목 표시');
+  const qbtn = page.locator('.queue-btn:visible, .queue-fab:visible');
+  ok((await qbtn.count()) === 1, '입력 대기 버튼');
+  await qbtn.click();
+  await page.waitForSelector('.queue-window');
+  await page.screenshot({ path: `e2e/out/r2f-${name}-queue.png` });
+  const total = Number((await page.locator('.q-count').innerText()).split('/')[1]);
+  console.log(`  queue ${total}`);
+  ok(total >= 2, '입력 대기 항목 표시');
   const before = await page.locator('.stat-total .stat-value').innerText();
-  await page.locator('.modal.is-wide .btn.primary').click();
+  await page.locator('.q-enter').click();
+  await page.locator('.q-next').click();
+  await page.locator('.q-skip').click();
+  await page.locator('.q-apply').click();
   await page.waitForTimeout(500);
-  ok((await page.locator('.modal.is-wide').count()) === 0, '추가 후 창 닫힘');
+  ok((await page.locator('.queue-window').count()) === 0, '적용 후 창 닫힘');
   const after = await page.locator('.stat-total .stat-value').innerText();
   console.log(`  total ${before} -> ${after}`);
-  ok(await page.locator('.alert-chip.is-warn').count() === 0, '처리 후 알림 칩 사라짐');
+  ok((await qbtn.count()) === 1 || total === 2, '처리하지 않은 건은 버튼에 남음');
   // 설정 > 고정지출 페이지
   await gotoSettings('고정지출');
   await page.waitForTimeout(200);

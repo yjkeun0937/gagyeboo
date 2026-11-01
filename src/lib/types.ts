@@ -27,6 +27,8 @@ export interface Entry extends Base {
   /** 금액 미확정(임의 금액) → [예상] */
   isEstimate?: boolean;
   importBatchId?: string;
+  /** 입력 대기에서 '실행 취소'로 지운 고정지출 내역. 삭제 표시지만 대기 목록에 다시 나타나야 한다 */
+  queueUndone?: boolean;
 }
 
 export interface Category extends Base {
@@ -107,6 +109,8 @@ export type TableName =
   | 'payDetails'
   | 'fixedItems'
   | 'fixedRuns'
+  | 'fixedSkips'
+  | 'proposals'
   | 'assets'
   | 'assetLogs';
 
@@ -133,12 +137,36 @@ export interface FixedItem extends Base {
   payDetail: ID | null;
   active: boolean;
   order: number;
+  /** 입력 대기에 나타나기 시작하는 달(등록한 달). 없으면 앱 사용 시작 달부터 */
+  startYm?: string;
 }
 
 /** 월별 처리 상태. 이 기록이 있으면 월초 입력 창이 자동으로 다시 뜨지 않는다. id = run_YYYY-MM */
 export interface FixedMonthRun extends Base {
   ym: string;
   status: 'done' | 'skipped';
+}
+
+/** 입력 대기에서 '입력하지 않음'으로 처리한 고정지출 (항목+월). ID는 고정지출 내역 ID와 같다 */
+export interface FixedSkip extends Base {
+  itemId: ID;
+  ym: string;
+}
+
+/** 손님 계정이 보낸 지출 제안. 주인이 입력 대기에서 처리한다 (처리하면 삭제 표시) */
+export interface Proposal extends Base {
+  /** 제안자 표시 이름 */
+  from: string;
+  receivedAt: number;
+  date: string;
+  store: string;
+  memo: string;
+  category: ID | null;
+  amount: number;
+  user: ID | null;
+  payMethod: ID | null;
+  payDetail: ID | null;
+  isEstimate?: boolean;
 }
 
 export interface EntryFilter {

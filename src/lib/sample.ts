@@ -1,7 +1,7 @@
 import { addDays, clampDay, daysInMonth, addMonths } from './dates';
 import { dueDate, fixedEntryId } from './fixed';
 import type { Entry, FixedItem, ID, PayDetail, User } from './types';
-import { nextStamp, save, today, users, entries, payDetails, fixedItems, fixedRuns } from '../store/store';
+import { nextStamp, save, today, users, entries, payDetails, fixedItems, fixedRuns, fixedSkips } from '../store/store';
 
 /**
  * R1 확인용 가상 데이터. 이름·상호는 모두 지어낸 것이고, ID가 'sample_'로 시작한다.
@@ -165,6 +165,9 @@ export async function clearSample(): Promise<number> {
   }
   for (const f of fixedItems.value.filter((x) => x.id.startsWith(P))) {
     await save('fixedItems', { ...f, deleted: true });
+  }
+  for (const k of fixedSkips.value.filter((x) => x.itemId.startsWith(P))) {
+    await save('fixedSkips', { ...k, deleted: true });
   }
   // 가상 고정지출을 처리했다는 기록이 남지 않도록 월 처리 상태도 비운다
   // (직접 등록한 고정지출이 있으면 그 처리 기록은 건드리지 않는다)

@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { bootBlocked, bootError, pendingFixed, ready, settings, staleTab } from './store/store';
+import { bootBlocked, bootError, queue, ready, settings, showToast, staleTab } from './store/store';
+import { countLabel } from './lib/queue';
 import {
   accountModal,
   closeSheet,
-  fixedPromptShown,
-  fixedWindow,
   logoutDialog,
   openAdd,
-  openFixedWindow,
+  openQueue,
+  queueNotified,
+  queueWindow,
   openSettings,
   setTab,
   sheet,
@@ -26,7 +27,7 @@ import { AssetsView } from './views/AssetsView';
 import { AssetSheet } from './views/AssetSheet';
 import { assetSheet, closeAssetSheet } from './ui/nav';
 import { SettingsView } from './views/SettingsView';
-import { FixedMonthWindow } from './views/FixedMonthWindow';
+import { QueueWindow } from './views/QueueWindow';
 
 const TABS: { id: Tab; label: string; icon: 'ReceiptText' | 'ChartColumn' | 'Landmark' | 'Settings' }[] = [
   { id: 'history', label: '사용 내역', icon: 'ReceiptText' },
@@ -121,6 +122,12 @@ function TopPanel() {
               지출 입력
             </button>
           ) : null}
+          {vp !== 'mobile' && queue.value.length > 0 ? (
+            <button type="button" class="btn queue-btn" onClick={openQueue}>
+              <Ui name="ListChecks" size={18} />
+              입력 대기({queue.value.length}건)
+            </button>
+          ) : null}
           <AccountChip />
         </div>
       </div>
@@ -128,12 +135,14 @@ function TopPanel() {
   );
 }
 
-/** 앱을 열 때, 이번 달(또는 지난 달)에 처리하지 않은 고정지출이 있으면 월초 입력 창을 자동으로 연다 */
-function useFixedPrompt() {
+/** 앱을 열었을 때 입력 대기 건이 있으면 짧게 알린다 (창은 자동으로 열지 않는다) */
+function useQueueNotice() {
   const isReady = ready.value;
   useEffect(() => {
-    if (isReady && !fixedPromptShown.value && pendingFixed.value.length > 0) openFixedWindow();
-    if (isReady) fixedPromptShown.value = true;
+    if (!isReady || queueNotified.value) return;
+    queueNotified.value = true;
+    const n = queue.value.length;
+    if (n > 0) showToast(`입력 대기 ${n}건이 있습니다`);
   }, [isReady]);
 }
 
@@ -207,7 +216,7 @@ function UpdateBanner() {
 
 export function App() {
   useAppearance();
-  useFixedPrompt();
+  useQueueNotice();
   if (!ready.value) return <BootScreen />;
   const vp = viewport.value;
   const t = tab.value;
@@ -226,9 +235,20 @@ export function App() {
           <Ui name="Plus" size={26} />
         </button>
       ) : null}
+      {vp === 'mobile' && queue.value.length > 0 && !sheet.value && !assetSheet.value ? (
+        <button
+          type="button"
+          class={`fab queue-fab ${t === 'history' || t === 'stats' ? '' : 'no-fab'}`}
+          aria-label={`입력 대기 ${queue.value.length}건`}
+          onClick={openQueue}
+        >
+          <span class="qf-label">대기</span>
+          <span class="qf-count num">{countLabel(queue.value.length)}</span>
+        </button>
+      ) : null}
       {sheet.value ? <EntrySheet /> : null}
       {assetSheet.value ? <AssetSheet /> : null}
-      {fixedWindow.value ? <FixedMonthWindow /> : null}
+      {queueWindow.value ? <QueueWindow /> : null}
       {accountModal.value ? <AccountModal /> : null}
       {logoutDialog.value ? <LogoutDialog /> : null}
       <PopoverLayer />

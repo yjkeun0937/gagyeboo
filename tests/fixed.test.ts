@@ -1,27 +1,29 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { entryStatus, filterEntries, goalWarning, groupByDate, summarize } from '../src/lib/calc';
-import { describeSchedule, dueDate, fixedEntryId, nextDue, pendingMonths, planMonth } from '../src/lib/fixed';
+import { describeSchedule, dueDate, fixedEntryId, nextDue } from '../src/lib/fixed';
+import { buildQueue } from '../src/lib/queue';
 import { clearSample, hasSample, loadSample } from '../src/lib/sample';
 import { EMPTY_FILTER, type Entry, type FixedItem, type FixedSchedule } from '../src/lib/types';
 import {
   addEntry,
   addFixedItem,
-  addFixedEntries,
+  applyQueue,
+  fixedHandled,
+  fixedSkips,
+  proposals,
+  queue,
+  save,
+  undoQueue,
   canDelete,
-  clearMonthRun,
   entries,
   exportAll,
   fixedItems,
-  fixedRuns,
   importAll,
   initStore,
-  markMonth,
-  pendingFixed,
   removeEntry,
   today,
   validateBackup,
-  firstUseYm,
   deleteFixedItem,
 } from '../src/store/store';
 
@@ -75,25 +77,50 @@ describe('고정지출 지정일 계산', () => {
   });
 });
 
-describe('월 계획·처리해야 할 달', () => {
-  const e = (id: string): Entry => ({ id } as Entry);
-  it('이번 달 해당 항목과 해당 없는 항목을 나누고, 사용 중이 아닌 항목은 뺀다', () => {
+describe('입력 대기 계산', () => {
+  const base = { firstUseYm: '2026-08', todayYm: '2026-11', runs: [], handledIds: new Set<string>(), skippedIds: new Set<string>(), proposals: [] };
+  it('해당 달의 활성 항목을 오래된 달부터 만들고, 사용 중이 아닌 항목·해당 없는 달은 뺀다', () => {
     const items = [
       item({ id: 'a' }),
-      item({ id: 'b', schedule: { kind: 'months', months: [7], day: 1 }, order: 1 }),
+      item({ id: 'b', schedule: { kind: 'months', months: [9], day: 1 }, order: 1 }),
       item({ id: 'c', active: false, order: 2 }),
     ];
-    const plan = planMonth(items, [e(fixedEntryId('a', '2026-11'))], '2026-11');
-    expect(plan.due.map((r) => [r.item.id, r.added])).toEqual([['a', true]]);
-    expect(plan.others.map((i) => i.id)).toEqual(['b']);
+    const q = buildQueue({ ...base, items });
+    expect(q.map((x) => x.key)).toEqual([
+      fixedEntryId('a', '2026-08'),
+      fixedEntryId('b', '2026-09'),
+      fixedEntryId('a', '2026-09'),
+      fixedEntryId('a', '2026-10'),
+      fixedEntryId('a', '2026-11'),
+    ]);
+    expect(q[0]).toMatchObject({ kind: 'fixed', ym: '2026-08', date: '2026-08-25', store: '관리비', amount: 100000 });
   });
-  it('시작 월부터 이번 달까지 미처리 달을 오래된 순으로, 처리·건너뜀·모두 추가된 달은 제외', () => {
-    const items = [item()];
-    const runs = [{ id: 'run_2026-09', ym: '2026-09', status: 'skipped', updatedAt: 0 }] as never;
-    const have = [e(fixedEntryId('f1', '2026-10'))];
-    expect(pendingMonths('2026-08', '2026-11', runs, items, have)).toEqual(['2026-08', '2026-11']);
-    expect(pendingMonths('2026-12', '2026-11', [], items, [])).toEqual([]);
-    expect(pendingMonths('2026-08', '2026-11', [], [], [])).toEqual([]);
+  it('이미 내역이 있는 것(지운 것 포함)·입력하지 않음·옛 월초 창에서 처리한 달은 나오지 않는다', () => {
+    const items = [item({ id: 'a' })];
+    const q = buildQueue({
+      ...base,
+      items,
+      handledIds: new Set([fixedEntryId('a', '2026-08')]),
+      skippedIds: new Set([fixedEntryId('a', '2026-09')]),
+      runs: [{ id: 'run_2026-10', ym: '2026-10', status: 'skipped', updatedAt: 0 }] as never,
+    });
+    expect(q.map((x) => x.ym)).toEqual(['2026-11']);
+  });
+  it('항목의 시작 월 이전은 소급하지 않는다. 시작 월이 없으면 앱 사용 시작 달부터', () => {
+    expect(buildQueue({ ...base, items: [item({ startYm: '2026-11' })] }).map((x) => x.ym)).toEqual(['2026-11']);
+    expect(buildQueue({ ...base, items: [item()] })).toHaveLength(4);
+    expect(buildQueue({ ...base, firstUseYm: '2026-12', items: [item()] })).toEqual([]);
+  });
+  it('손님 제안은 입력되는 달·날짜 순으로 섞이고, 처리(삭제)된 제안은 빠진다', () => {
+    const p = (id: string, date: string, deleted = false) =>
+      ({ id, from: '손님', receivedAt: 1, date, store: '제안', memo: '', category: null, amount: 5, user: null, payMethod: null, payDetail: null, updatedAt: 0, deleted }) as never;
+    const q = buildQueue({ ...base, items: [item({ startYm: '2026-11' })], proposals: [p('x', '2026-11-30'), p('y', '2026-11-25'), p('z', '2026-11-01', true)] });
+    expect(q.map((x) => [x.kind, x.date])).toEqual([
+      ['fixed', '2026-11-25'],
+      ['proposal', '2026-11-25'],
+      ['proposal', '2026-11-30'],
+    ]);
+    expect(q[1].from).toBe('손님');
   });
 });
 
@@ -142,47 +169,77 @@ beforeEach(async () => {
   await initStore(`fx-test-${++n}`);
 });
 
-describe('고정지출 추가 (저장소)', () => {
-  it('지정일 날짜의 내역을 만들고 그 달을 처리함으로 기록한다. 미래면 [보류]', async () => {
-    const t = today.value;
-    const ym = t.slice(0, 7);
+describe('입력 대기 적용 (저장소)', () => {
+  const ym = () => today.value.slice(0, 7);
+  it('입력하면 지정일 날짜의 내역이 되고 대기에서 사라진다. 미래 날짜면 [보류], 예상 항목은 [예상]', async () => {
     const a = await addFixedItem({ ...item(), schedule: { kind: 'monthly', day: 'last' }, amountMode: 'estimate' } as never);
-    const ids = await addFixedEntries(ym, [{ itemId: a.id }]);
-    expect(ids).toEqual([fixedEntryId(a.id, ym)]);
+    expect(a.startYm).toBe(ym());
+    expect(queue.value.map((q) => q.key)).toEqual([fixedEntryId(a.id, ym())]);
+    await applyQueue([{ item: queue.value[0], action: 'enter' }]);
     const e = entries.value[0];
-    expect(e.source).toBe('fixed');
-    expect(e.isEstimate).toBe(true);
-    expect(e.date.startsWith(ym)).toBe(true);
-    expect(entryStatus(e, '2026-10-01')).toBe('pending');
-    expect(fixedRuns.value.find((r) => r.ym === ym)?.status).toBe('done');
+    expect(e).toMatchObject({ source: 'fixed', isEstimate: true, id: fixedEntryId(a.id, ym()), amount: 100000 });
+    expect(e.date.startsWith(ym())).toBe(true);
+    expect(entryStatus(e, `${ym()}-01`)).toBe('pending');
+    expect(queue.value).toHaveLength(0);
   });
-  it('금액을 고쳐 추가하면 확정되고 [예상]이 붙지 않는다', async () => {
-    const a = await addFixedItem({ ...item(), amountMode: 'estimate' } as never);
-    await addFixedEntries('2026-10', [{ itemId: a.id, amount: 98765 }]);
-    expect(entries.value[0].amount).toBe(98765);
-    expect(entries.value[0].isEstimate).toBe(false);
-  });
-  it('같은 달에 두 번 추가해도 한 건이고, 삭제하면 다시 추가할 수 있다', async () => {
+  it('입력하지 않음은 대기에서 사라지고 다시 나타나지 않는다. 내역도 만들지 않는다', async () => {
     const a = await addFixedItem(item() as never);
-    await addFixedEntries('2026-10', [{ itemId: a.id }]);
-    await addFixedEntries('2026-10', [{ itemId: a.id }]);
-    expect(entries.value).toHaveLength(1);
-    await removeEntry(fixedEntryId(a.id, '2026-10'));
+    await applyQueue([{ item: queue.value[0], action: 'skip' }]);
     expect(entries.value).toHaveLength(0);
-    await addFixedEntries('2026-10', [{ itemId: a.id }]);
+    expect(fixedSkips.value.map((k) => k.id)).toEqual([fixedEntryId(a.id, ym())]);
+    expect(queue.value).toHaveLength(0);
+  });
+  it('선택하지 않은 건은 그대로 남고, 같은 건을 두 번 적용해도 내역은 한 건', async () => {
+    const a = await addFixedItem(item() as never);
+    await addFixedItem(item({ id: 'f2', name: '통신비' }) as never);
+    const first = queue.value[0];
+    await applyQueue([{ item: first, action: 'enter' }]);
+    await applyQueue([{ item: first, action: 'enter' }]);
+    expect(entries.value).toHaveLength(1);
+    expect(queue.value).toHaveLength(1);
+    expect(queue.value[0].key).not.toBe(first.key);
+    expect(a.id).toBeTruthy();
+  });
+  it('직접 지운 고정지출 내역은 대기로 돌아오지 않는다', async () => {
+    const a = await addFixedItem(item() as never);
+    await applyQueue([{ item: queue.value[0], action: 'enter' }]);
+    await removeEntry(fixedEntryId(a.id, ym()));
+    expect(entries.value).toHaveLength(0);
+    expect(fixedHandled.value.has(fixedEntryId(a.id, ym()))).toBe(true);
+    expect(queue.value).toHaveLength(0);
+  });
+  it('실행 취소하면 입력·입력하지 않음 모두 대기로 되돌아온다. 다시 입력할 수도 있다', async () => {
+    await addFixedItem(item() as never);
+    await addFixedItem(item({ id: 'f2', name: '통신비' }) as never);
+    const [x, y] = queue.value;
+    const undo = await applyQueue([
+      { item: x, action: 'enter' },
+      { item: y, action: 'skip' },
+    ]);
+    expect(queue.value).toHaveLength(0);
+    await undoQueue(undo);
+    expect(entries.value).toHaveLength(0);
+    expect(fixedSkips.value).toHaveLength(0);
+    expect(queue.value.map((q) => q.key).sort()).toEqual([x.key, y.key].sort());
+    await applyQueue([{ item: queue.value[0], action: 'enter' }]);
     expect(entries.value).toHaveLength(1);
   });
-  it('처리 상태가 없고 추가할 항목이 남은 달만 미처리로 계산된다', async () => {
-    const a = await addFixedItem(item() as never);
-    const ym = today.value.slice(0, 7);
-    expect(firstUseYm.value).toBe(ym);
-    expect(pendingFixed.value).toEqual([ym]);
-    await markMonth(ym, 'skipped');
-    expect(pendingFixed.value).toEqual([]);
-    await clearMonthRun(ym);
-    expect(pendingFixed.value).toEqual([ym]);
-    await addFixedEntries(ym, [{ itemId: a.id }]);
-    expect(pendingFixed.value).toEqual([]);
+  it('손님 제안: 입력하면 내역이 되고, 입력하지 않음이면 내역 없이 사라진다. 실행 취소로 되살아난다', async () => {
+    const pr = (id: string) => ({ id, from: '손님', receivedAt: 1, date: `${ym()}-05`, store: '제안가게', memo: '명세', category: null, amount: 7000, user: null, payMethod: null, payDetail: null, updatedAt: 0 });
+    await save('proposals', pr('p1') as never);
+    await save('proposals', pr('p2') as never);
+    expect(queue.value.map((q) => q.kind)).toEqual(['proposal', 'proposal']);
+    const undo = await applyQueue([
+      { item: queue.value[0], action: 'enter' },
+      { item: queue.value[1], action: 'skip' },
+    ]);
+    expect(entries.value).toHaveLength(1);
+    expect(entries.value[0]).toMatchObject({ store: '제안가게', amount: 7000, source: 'manual' });
+    expect(proposals.value).toHaveLength(0);
+    expect(queue.value).toHaveLength(0);
+    await undoQueue(undo);
+    expect(entries.value).toHaveLength(0);
+    expect(proposals.value).toHaveLength(2);
   });
   it('고정지출이 가리키는 분류·사용자는 삭제할 수 없다. 항목을 지우면 풀린다', async () => {
     const a = await addFixedItem({ ...item(), category: 'cat_11' } as never);
@@ -193,7 +250,7 @@ describe('고정지출 추가 (저장소)', () => {
   });
   it('백업에 고정지출이 포함되고, v1 백업도 복원된다', async () => {
     const a = await addFixedItem(item() as never);
-    await addFixedEntries('2026-10', [{ itemId: a.id }]);
+    await save('fixedSkips', { id: fixedEntryId(a.id, '2026-10'), updatedAt: 0, itemId: a.id, ym: '2026-10' });
     const b = await exportAll();
     expect(validateBackup(b)).toBe(true);
     expect(b.fixedItems).toHaveLength(1);
@@ -203,22 +260,23 @@ describe('고정지출 추가 (저장소)', () => {
     expect(validateBackup(v1)).toBe(true);
     await importAll(v1);
     expect(fixedItems.value).toHaveLength(0);
-    expect(entries.value.length).toBe(1);
+    expect(fixedSkips.value).toHaveLength(1); // 이전 백업은 '입력하지 않음' 기록을 건드리지 않는다
     await importAll(JSON.parse(JSON.stringify(b)));
     expect(fixedItems.value).toHaveLength(1);
-    expect(fixedRuns.value).toHaveLength(1);
+    expect(fixedSkips.value).toHaveLength(1);
   });
-  it('가상 데이터에는 고정지출이 있고, 지우면 처리 기록까지 함께 사라진다', async () => {
+  it('가상 데이터에는 고정지출이 있고 입력 대기에 올라온다. 지우면 대기·처리 기록까지 함께 사라진다', async () => {
     await loadSample();
     expect(fixedItems.value.length).toBeGreaterThan(2);
-    expect(pendingFixed.value.length).toBe(1);
-    const ids = await addFixedEntries(today.value.slice(0, 7), fixedItems.value.map((f) => ({ itemId: f.id })));
-    expect(ids.length).toBeGreaterThan(0);
+    expect(queue.value.length).toBeGreaterThan(0);
+    await applyQueue([{ item: queue.value[0], action: 'skip' }]);
+    expect(fixedSkips.value).toHaveLength(1);
     await clearSample();
     expect(hasSample()).toBe(false);
     expect(entries.value).toHaveLength(0);
     expect(fixedItems.value).toHaveLength(0);
-    expect(fixedRuns.value).toHaveLength(0);
+    expect(fixedSkips.value).toHaveLength(0);
+    expect(queue.value).toHaveLength(0);
   });
   it('내역을 직접 추가해도 고정지출과 섞이지 않는다', async () => {
     await addEntry({ date: '2026-10-10', store: 'x', memo: '', category: null, amount: 1, user: null, payMethod: null, payDetail: null });

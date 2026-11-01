@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { describeSchedule, emptyScheduleFor, nextDue } from '../lib/fixed';
-import { formatYm, monthNum, ymOf } from '../lib/dates';
+import { monthNum, ymOf } from '../lib/dates';
 import { digitsOnly, won } from '../lib/format';
 import type { FixedItem, FixedSchedule } from '../lib/types';
 import {
@@ -9,12 +9,11 @@ import {
   categoriesById,
   deleteFixedItem,
   fixedItemsSorted,
-  fixedRuns,
   moveItem,
   payDetails,
   payMethodsById,
   payMethodsSorted,
-  pendingFixed,
+  queue,
   save,
   showToast,
   today,
@@ -22,7 +21,7 @@ import {
   usersById,
 } from '../store/store';
 import { CategoryDot, PayGlyph, Ui, UserGlyph } from '../ui/icons';
-import { openFixedWindow } from '../ui/nav';
+import { openQueue } from '../ui/nav';
 import { askConfirm, Modal } from '../ui/overlay';
 import { Pills } from '../ui/parts';
 import { Chip, PayDetailPicker, UserPicker } from './EntrySheet';
@@ -233,6 +232,12 @@ function FixedEditor({ initial, onClose }: { initial?: FixedItem; onClose: () =>
           {schedule.day !== 'last' && schedule.day > 28 ? ' · 해당 월에 그 날짜가 없으면 마지막 날로 입력됩니다' : ''}
           {next ? ` · 다음 지정일 ${next}` : ''}
         </p>
+        {!initial ? (
+          <p class="hint fx-notice">
+            등록하면 <b>이번 달({monthNum(ymOf(t))}월)부터</b> 입력 대기에 추가됩니다(지난 달은 추가되지 않습니다). 이번 달에 원하지 않으면 입력 대기에서
+            「입력하지 않음」으로 제외할 수 있습니다.
+          </p>
+        ) : null}
       </div>
 
       <div class="field">
@@ -286,7 +291,7 @@ function FixedEditor({ initial, onClose }: { initial?: FixedItem; onClose: () =>
       </div>
       <label class="check">
         <input type="checkbox" checked={active} onChange={(e) => setActive(e.currentTarget.checked)} />
-        사용 중 (끄면 월초 입력 창에 나타나지 않습니다)
+        사용 중 (끄면 입력 대기에 나타나지 않습니다)
       </label>
       {err ? (
         <p class="form-error" role="alert">
@@ -300,38 +305,33 @@ function FixedEditor({ initial, onClose }: { initial?: FixedItem; onClose: () =>
 export function FixedPage() {
   const items = fixedItemsSorted.value;
   const [editor, setEditor] = useState<{ item?: FixedItem } | null>(null);
-  const thisMonth = ymOf(today.value);
-  const run = fixedRuns.value.find((r) => r.ym === thisMonth);
-  const pending = pendingFixed.value;
-
-  const status = run
-    ? run.status === 'done'
-      ? '처리함'
-      : '건너뜀'
-    : pending.includes(thisMonth)
-      ? '미처리'
-      : items.some((i) => i.active)
-        ? '추가할 항목 없음'
-        : '등록된 항목 없음';
+  const fixedWaiting = queue.value.filter((q) => q.kind === 'fixed');
+  const months = [...new Set(fixedWaiting.map((q) => q.ym))];
+  const thisYm = ymOf(today.value);
 
   return (
     <div class="settings-form">
       <section class="card-block">
-        <h3>{formatYm(thisMonth)} 처리 현황</h3>
+        <h3>입력 대기</h3>
         <p>
-          <span class={`pill ${status === '미처리' ? 'pill-pending' : 'pill-estimate'}`}>{status}</span>
-          {pending.length > 1 || (pending.length === 1 && pending[0] !== thisMonth)
-            ? ` 처리하지 않은 달: ${pending.map((m) => `${monthNum(m)}월`).join(', ')}`
-            : ''}
+          {fixedWaiting.length ? (
+            <>
+              <span class="pill pill-pending">대기 {fixedWaiting.length}건</span>
+              {months.length > 1 || months[0] !== thisYm ? ` ${months.map((m) => `${monthNum(m)}월`).join(', ')}분` : ''}
+            </>
+          ) : (
+            <span class="pill pill-estimate">{items.some((i) => i.active) ? '대기 중인 항목 없음' : '등록된 항목 없음'}</span>
+          )}
         </p>
         <div class="btn-row">
-          <button type="button" class="btn primary" onClick={() => openFixedWindow(thisMonth)}>
+          <button type="button" class="btn primary" disabled={queue.value.length === 0} onClick={openQueue}>
             <Ui name="CalendarDays" size={16} />
-            고정지출 추가 (월 선택)
+            입력 대기 열기{queue.value.length ? ` (${queue.value.length}건)` : ''}
           </button>
         </div>
         <p class="hint">
-          매달 1일 이후 처음 앱을 열면 이 창이 자동으로 뜹니다. 원하는 달을 골라 언제든 다시 열 수 있습니다.
+          매달 지정일이 되는 고정지출은 그 달부터 「입력 대기」에 쌓입니다. 화면 위쪽(휴대폰은 오른쪽 아래)의 「입력 대기」 버튼에서
+          항목마다 「입력」 또는 「입력하지 않음」을 골라 한 번에 적용합니다.
         </p>
       </section>
 
@@ -343,7 +343,7 @@ export function FixedPage() {
         </button>
       </div>
       {items.length === 0 ? (
-        <p class="empty-line">등록된 고정지출이 없습니다. 매달 반복되는 지출을 등록해 두면 월초에 골라서 한 번에 추가할 수 있습니다.</p>
+        <p class="empty-line">등록된 고정지출이 없습니다. 매달 반복되는 지출을 등록해 두면 매달 입력 대기에 올라와 골라서 한 번에 추가할 수 있습니다.</p>
       ) : (
         <ul class="list">
           {items.map((f, i) => {

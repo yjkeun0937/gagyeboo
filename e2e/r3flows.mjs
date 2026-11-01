@@ -31,7 +31,7 @@ async function device(name, vp, { clientId = true, account } = {}) {
   d.signIn = async () => { await d.openAccount(); await page.getByRole('button', { name: '구글 계정으로 로그인' }).click(); };
   d.syncNow = async () => { await d.openAccount(); await page.getByRole('button', { name: '지금 동기화' }).click(); await page.waitForTimeout(150); await d.closeModal(); };
   d.addEntry = async (store, amount) => {
-    await (d.mobile ? page.locator('.fab') : page.locator('.add-btn')).click();
+    await (d.mobile ? page.locator('.fab:not(.queue-fab)') : page.locator('.add-btn')).click();
     await page.waitForSelector('.sheet');
     await page.fill('#f-store', store);
     await page.fill('#f-amount', String(amount));
@@ -152,8 +152,8 @@ await A.page.reload(); await A.page.waitForSelector('.account-chip'); await A.pa
 await A.page.evaluate(() => localStorage.setItem('fakeAccount', 'bob'));
 await A.openAccount();
 await A.page.getByRole('button', { name: '구글 다시 연결' }).click();
-await A.page.waitForSelector('.toast');
-ok((await A.page.locator('.toast').innerText()).includes('같은 계정으로 다시 시도'), '다른 계정이면 안내 토스트');
+await A.page.locator('.toast', { hasText: '같은 계정으로 다시 시도' }).waitFor({ timeout: 5000 }).catch(() => {});
+ok((await A.page.locator('.toast', { hasText: '같은 계정으로 다시 시도' }).count()) > 0, '다른 계정이면 안내 토스트');
 ok((await A.status()) === 'reconnect', '여전히 재연결 필요 상태');
 await A.page.evaluate(() => localStorage.setItem('fakeAccount', 'alice'));
 await A.page.getByRole('button', { name: '구글 다시 연결' }).click();

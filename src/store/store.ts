@@ -1,7 +1,7 @@
 import { computed, signal, type Signal } from '@preact/signals';
 import { buildStoreIndex, compareEntries } from '../lib/calc';
 import { todayKST, ymOf } from '../lib/dates';
-import { dueDate, fixedEntryId, pendingMonths, runId } from '../lib/fixed';
+import { buildQueue, type QueueItem } from '../lib/queue';
 import { uid } from '../lib/format';
 import type { ImportPlan } from '../lib/importer';
 import { seedCategories, seedPayMethods } from '../lib/seed';
@@ -18,6 +18,8 @@ import {
   type Entry,
   type FixedItem,
   type FixedMonthRun,
+  type FixedSkip,
+  type Proposal,
   type ID,
   type ListTableName,
   type PayDetail,
@@ -42,6 +44,15 @@ export const payMethods = signal<PayMethod[]>([]);
 export const payDetails = signal<PayDetail[]>([]);
 export const fixedItems = signal<FixedItem[]>([]);
 export const fixedRuns = signal<FixedMonthRun[]>([]);
+/** 입력 대기에서 '입력하지 않음'으로 처리한 고정지출 */
+export const fixedSkips = signal<FixedSkip[]>([]);
+/** 손님이 보낸 제안 (처리 전) */
+export const proposals = signal<Proposal[]>([]);
+/**
+ * 고정지출에서 만든 내역의 ID 중 지금 입력 대기에 다시 나타나면 안 되는 것.
+ * 지운 내역(삭제 표시)도 포함한다. 입력 대기에서 '실행 취소'로 지운 것만 뺀다.
+ */
+export const fixedHandled = signal<Set<string>>(new Set());
 export const assets = signal<Asset[]>([]);
 export const assetLogs = signal<AssetLog[]>([]);
 /** 재산 항목·이력을 마지막으로 바꾼 시각(ms). 지운 기록도 포함한다. 없으면 0 */
@@ -61,6 +72,8 @@ interface Rows {
   payDetails: PayDetail;
   fixedItems: FixedItem;
   fixedRuns: FixedMonthRun;
+  fixedSkips: FixedSkip;
+  proposals: Proposal;
   assets: Asset;
   assetLogs: AssetLog;
 }
@@ -73,6 +86,8 @@ const sigs: { [K in TableName]: Signal<Rows[K][]> } = {
   payDetails,
   fixedItems,
   fixedRuns,
+  fixedSkips,
+  proposals,
   assets,
   assetLogs,
 };
@@ -95,15 +110,17 @@ export const monthEntries = computed(() =>
 );
 export const storeIndex = computed(() => buildStoreIndex(entries.value));
 export const fixedItemsSorted = computed(() => [...fixedItems.value].sort(byOrder));
-/** 월초 입력 창에서 처리해야 하는 달(오래된 순) */
-export const pendingFixed = computed(() =>
-  pendingMonths(
-    firstUseYm.value,
-    ymOf(today.value),
-    fixedRuns.value,
-    fixedItems.value,
-    entries.value,
-  ),
+/** 입력 대기 목록 (고정지출 + 손님 제안) */
+export const queue = computed<QueueItem[]>(() =>
+  buildQueue({
+    items: fixedItems.value,
+    firstUseYm: firstUseYm.value,
+    todayYm: ymOf(today.value),
+    runs: fixedRuns.value,
+    handledIds: fixedHandled.value,
+    skippedIds: new Set(fixedSkips.value.map((k) => k.id)),
+    proposals: proposals.value,
+  }),
 );
 
 /* ───────── 초기화 ───────── */
@@ -115,7 +132,7 @@ export function refreshToday() {
 
 async function loadFromDb() {
   const d = db();
-  const [e, c, u, p, pd, fi, fr, st, fu, as, al] = await Promise.all([
+  const [e, c, u, p, pd, fi, fr, st, fu, as, al, fs, pr] = await Promise.all([
     d.entries.toArray(),
     d.categories.toArray(),
     d.users.toArray(),
@@ -127,6 +144,8 @@ async function loadFromDb() {
     d.meta.get('firstUseYm'),
     d.assets.toArray(),
     d.assetLogs.toArray(),
+    d.fixedSkips.toArray(),
+    d.proposals.toArray(),
   ]);
   const live = <T extends Base>(rows: T[]) => rows.filter((r) => !r.deleted);
   entries.value = live(e);
@@ -136,6 +155,9 @@ async function loadFromDb() {
   payDetails.value = live(pd);
   fixedItems.value = live(fi);
   fixedRuns.value = live(fr);
+  fixedSkips.value = live(fs);
+  proposals.value = live(pr);
+  fixedHandled.value = new Set(e.filter((x) => x.id.startsWith('fx_') && !x.queueUndone).map((x) => x.id));
   assets.value = live(as);
   assetLogs.value = live(al);
   assetsUpdatedAt.value = Math.max(0, ...as.map((r) => r.updatedAt), ...al.map((r) => r.updatedAt));
@@ -214,6 +236,12 @@ export async function save<T extends TableName>(table: T, item: Rows[T]): Promis
   const rest = s.value.filter((x) => x.id !== next.id);
   s.value = next.deleted ? rest : [...rest, next];
   if (table === 'assets' || table === 'assetLogs') assetsUpdatedAt.value = next.updatedAt;
+  if (table === 'entries' && next.id.startsWith('fx_')) {
+    const handled = new Set(fixedHandled.value);
+    if ((next as Entry).queueUndone) handled.delete(next.id);
+    else handled.add(next.id);
+    fixedHandled.value = handled;
+  }
   onLocalChange?.();
   return next;
 }
@@ -345,10 +373,11 @@ export async function moveItem(
 
 /* ───────── 고정지출 ───────── */
 
-export type FixedItemInput = Omit<FixedItem, 'id' | 'updatedAt' | 'deleted' | 'order'>;
+export type FixedItemInput = Omit<FixedItem, 'id' | 'updatedAt' | 'deleted' | 'order' | 'startYm'>;
 
 export async function addFixedItem(input: FixedItemInput): Promise<FixedItem> {
-  return save('fixedItems', { ...input, id: uid(), updatedAt: 0, order: nextOrder(fixedItems.value) });
+  // 등록한 달부터 입력 대기에 나타난다 (지난 달은 소급하지 않음)
+  return save('fixedItems', { ...input, id: uid(), updatedAt: 0, order: nextOrder(fixedItems.value), startYm: ymOf(todayKST()) });
 }
 
 export async function updateFixedItem(id: ID, patch: Partial<FixedItemInput>): Promise<void> {
@@ -362,59 +391,89 @@ export async function deleteFixedItem(id: ID): Promise<void> {
   if (cur) await save('fixedItems', { ...cur, deleted: true });
 }
 
-export interface FixedPick {
-  itemId: ID;
-  /** 창에서 금액을 고쳤으면 그 금액(확정). 없으면 등록 금액 */
-  amount?: number;
+export type QueueAction = 'enter' | 'skip';
+
+export interface QueueDecision {
+  item: QueueItem;
+  action: QueueAction;
+}
+
+export interface QueueUndo {
+  /** 새로 만든 내역 ID와, 되살려야 하는 것 */
+  entered: { id: string; fixed: boolean }[];
+  skips: FixedSkip[];
+  proposals: Proposal[];
 }
 
 /**
- * 고른 항목을 그 달 지정일 날짜의 내역으로 추가하고 그 달을 '처리함'으로 기록한다.
- * 이미 추가된 항목은 건너뛴다. 추가한 내역 ID를 돌려준다 (실행 취소용).
+ * 입력 대기에서 고른 대로 한꺼번에 처리한다.
+ * - 입력: 내역으로 추가 (고정지출은 지정일·[예상] 규칙 그대로, 제안은 제안 내용 그대로)
+ * - 입력하지 않음: 고정지출은 '입력하지 않음' 기록을 남기고, 제안은 삭제한다
+ * 처리한 건은 목록에서 사라진다. 돌려준 값으로 되돌릴 수 있다.
  */
-export async function addFixedEntries(ym: string, picks: FixedPick[]): Promise<string[]> {
-  const live = new Set(entries.value.map((e) => e.id));
-  const made: string[] = [];
-  for (const p of picks) {
-    const item = fixedItems.value.find((f) => f.id === p.itemId);
-    if (!item) continue;
-    const id = fixedEntryId(item.id, ym);
-    const date = dueDate(item.schedule, ym);
-    if (!date || live.has(id)) continue;
-    const edited = p.amount !== undefined && p.amount !== item.amount;
-    await addEntry(
-      {
-        date,
-        store: item.name,
-        memo: item.memo,
-        category: item.category,
-        amount: p.amount ?? item.amount,
-        user: item.user,
-        payMethod: item.payMethod,
-        payDetail: item.payDetail,
-      },
-      {
-        id,
-        source: 'fixed',
-        fixedId: item.id,
-        fixedYm: ym,
-        isEstimate: item.amountMode === 'estimate' && !edited,
-      },
-    );
-    made.push(id);
+export async function applyQueue(decisions: QueueDecision[]): Promise<QueueUndo> {
+  const undo: QueueUndo = { entered: [], skips: [], proposals: [] };
+  const liveIds = new Set(entries.value.map((e) => e.id));
+  for (const { item, action } of decisions) {
+    if (item.kind === 'fixed') {
+      if (action === 'enter') {
+        const id = item.key;
+        if (liveIds.has(id)) continue;
+        await addEntry(
+          {
+            date: item.date,
+            store: item.store,
+            memo: item.memo,
+            category: item.category,
+            amount: item.amount,
+            user: item.user,
+            payMethod: item.payMethod,
+            payDetail: item.payDetail,
+          },
+          { id, source: 'fixed', fixedId: item.refId, fixedYm: item.ym, isEstimate: item.isEstimate },
+        );
+        undo.entered.push({ id, fixed: true });
+      } else {
+        const skip = await save('fixedSkips', { id: item.key, updatedAt: 0, itemId: item.refId, ym: item.ym });
+        undo.skips.push(skip);
+      }
+    } else {
+      const p = proposals.value.find((x) => x.id === item.refId);
+      if (!p) continue;
+      if (action === 'enter') {
+        const id = `pr_${p.id}`;
+        if (!liveIds.has(id)) {
+          await addEntry(
+            {
+              date: p.date,
+              store: p.store,
+              memo: p.memo,
+              category: p.category,
+              amount: p.amount,
+              user: p.user,
+              payMethod: p.payMethod,
+              payDetail: p.payDetail,
+            },
+            { id, isEstimate: p.isEstimate },
+          );
+          undo.entered.push({ id, fixed: false });
+        }
+      }
+      await save('proposals', { ...p, deleted: true });
+      undo.proposals.push(p);
+    }
   }
-  await markMonth(ym, 'done');
-  return made;
+  return undo;
 }
 
-export async function markMonth(ym: string, status: 'done' | 'skipped'): Promise<void> {
-  await save('fixedRuns', { id: runId(ym), updatedAt: 0, ym, status });
-}
-
-/** '처리함·건너뜀' 기록을 지워 그 달을 다시 미처리로 되돌린다. */
-export async function clearMonthRun(ym: string): Promise<void> {
-  const cur = fixedRuns.value.find((r) => r.ym === ym);
-  if (cur) await save('fixedRuns', { ...cur, deleted: true });
+/** applyQueue를 되돌린다. 입력했던 내역을 지우고, 입력하지 않음 기록·제안을 되살린다 */
+export async function undoQueue(u: QueueUndo): Promise<void> {
+  for (const { id, fixed } of u.entered) {
+    const cur = entries.value.find((e) => e.id === id);
+    if (cur) await save('entries', { ...cur, deleted: true, queueUndone: fixed ? true : undefined });
+  }
+  for (const k of u.skips) await save('fixedSkips', { ...k, deleted: true });
+  for (const p of u.proposals) await save('proposals', { ...p, deleted: false });
 }
 
 /* ───────── 재산상황 ───────── */
@@ -560,6 +619,8 @@ export interface BackupFile {
   /** v2부터. v1 백업에는 없다 */
   fixedItems?: FixedItem[];
   fixedRuns?: FixedMonthRun[];
+  /** v4부터. 이전 백업에는 없다 */
+  fixedSkips?: FixedSkip[];
   /** v3부터. 이전 백업에는 없다 */
   assets?: Asset[];
   assetLogs?: AssetLog[];
@@ -567,7 +628,7 @@ export interface BackupFile {
 
 export async function exportAll(): Promise<BackupFile> {
   const d = db();
-  const [e, c, u, p, pd, fi, fr, as, al] = await Promise.all([
+  const [e, c, u, p, pd, fi, fr, as, al, fs] = await Promise.all([
     d.entries.toArray(),
     d.categories.toArray(),
     d.users.toArray(),
@@ -577,6 +638,7 @@ export async function exportAll(): Promise<BackupFile> {
     d.fixedRuns.toArray(),
     d.assets.toArray(),
     d.assetLogs.toArray(),
+    d.fixedSkips.toArray(),
   ]);
   return {
     app: 'gagyeboo',
@@ -590,6 +652,7 @@ export async function exportAll(): Promise<BackupFile> {
     payDetails: pd,
     fixedItems: fi,
     fixedRuns: fr,
+    fixedSkips: fs,
     assets: as,
     assetLogs: al,
   };
@@ -603,7 +666,7 @@ export function validateBackup(data: unknown): data is BackupFile {
   for (const k of ['entries', 'categories', 'users', 'payMethods', 'payDetails']) {
     if (!Array.isArray(b[k])) return false;
   }
-  for (const k of ['fixedItems', 'fixedRuns', 'assets', 'assetLogs']) {
+  for (const k of ['fixedItems', 'fixedRuns', 'fixedSkips', 'assets', 'assetLogs']) {
     if (b[k] !== undefined && !Array.isArray(b[k])) return false;
   }
   return (b.entries as Entry[]).every(
@@ -611,7 +674,7 @@ export function validateBackup(data: unknown): data is BackupFile {
   );
 }
 
-const ALL_TABLES: TableName[] = ['entries', 'categories', 'users', 'payMethods', 'payDetails', 'fixedItems', 'fixedRuns', 'assets', 'assetLogs'];
+const ALL_TABLES: TableName[] = ['entries', 'categories', 'users', 'payMethods', 'payDetails', 'fixedItems', 'fixedRuns', 'fixedSkips', 'proposals', 'assets', 'assetLogs'];
 
 /**
  * 모든 표를 `rows`로 바꾼다. 기기 간 동기화에서 '지금 이 상태가 최신'으로 인정받도록,
@@ -620,7 +683,7 @@ const ALL_TABLES: TableName[] = ['entries', 'categories', 'users', 'payMethods',
 async function replaceAllRows(rows: { [K in TableName]?: Base[] }, leave: TableName[] = []): Promise<void> {
   const d = db();
   const now = Date.now();
-  await d.transaction('rw', [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns, d.assets, d.assetLogs], async () => {
+  await d.transaction('rw', [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns, d.fixedSkips, d.proposals, d.assets, d.assetLogs], async () => {
     for (const t of ALL_TABLES) {
       if (leave.includes(t)) continue;
       const table = d[t] as unknown as {
@@ -648,9 +711,15 @@ export async function importAll(data: BackupFile): Promise<void> {
     payDetails: data.payDetails,
     fixedItems: data.fixedItems ?? [],
     fixedRuns: data.fixedRuns ?? [],
+    fixedSkips: data.fixedSkips ?? [],
     assets: data.assets ?? [],
     assetLogs: data.assetLogs ?? [],
-  }, data.assets ? [] : ['assets', 'assetLogs']); // 재산상황이 없는 이전 백업은 지금의 재산상황을 건드리지 않는다
+  }, [
+    // 재산상황·'입력하지 않음' 기록이 없는 이전 백업은 지금의 것을 건드리지 않는다. 손님 제안은 백업 대상이 아니다
+    ...(data.assets ? [] : (['assets', 'assetLogs'] as const)),
+    ...(data.fixedSkips ? [] : (['fixedSkips'] as const)),
+    'proposals' as const,
+  ]);
   await d.meta.put({ key: 'seeded', value: true });
   if (data.settings) {
     await d.meta.put({ key: 'settings', value: data.settings });
@@ -683,10 +752,12 @@ export async function resetAll(): Promise<void> {
  */
 export async function wipeLocalOnly(): Promise<void> {
   const d = db();
-  await d.transaction('rw', [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns, d.assets, d.assetLogs, d.meta], async () => {
+  await d.transaction('rw', [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns, d.fixedSkips, d.proposals, d.assets, d.assetLogs, d.meta], async () => {
     await Promise.all([
       d.assets.clear(),
       d.assetLogs.clear(),
+      d.fixedSkips.clear(),
+      d.proposals.clear(),
       d.entries.clear(),
       d.categories.clear(),
       d.users.clear(),

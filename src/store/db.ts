@@ -6,8 +6,10 @@ import type {
   Entry,
   FixedItem,
   FixedMonthRun,
+  FixedSkip,
   PayDetail,
   PayMethod,
+  Proposal,
   User,
 } from '../lib/types';
 
@@ -27,6 +29,8 @@ export class LedgerDB extends Dexie {
   payDetails!: Table<PayDetail, string>;
   fixedItems!: Table<FixedItem, string>;
   fixedRuns!: Table<FixedMonthRun, string>;
+  fixedSkips!: Table<FixedSkip, string>;
+  proposals!: Table<Proposal, string>;
   assets!: Table<Asset, string>;
   assetLogs!: Table<AssetLog, string>;
   meta!: Table<MetaRow, string>;
@@ -65,11 +69,26 @@ export class LedgerDB extends Dexie {
       assetLogs: 'id, assetId, at',
       meta: 'key',
     });
+    // v4: 입력 대기(고정지출 '입력하지 않음' 기록, 손님 제안) 추가. 기존 데이터는 그대로 둔다.
+    this.version(4).stores({
+      entries: 'id, date, updatedAt',
+      categories: 'id',
+      users: 'id',
+      payMethods: 'id',
+      payDetails: 'id',
+      fixedItems: 'id',
+      fixedRuns: 'id',
+      fixedSkips: 'id',
+      proposals: 'id',
+      assets: 'id, state',
+      assetLogs: 'id, assetId, at',
+      meta: 'key',
+    });
   }
 }
 
 /** 저장 형식 버전. 백업 파일에도 기록된다. */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 let current: LedgerDB | null = null;
 

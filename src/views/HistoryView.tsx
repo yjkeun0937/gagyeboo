@@ -28,7 +28,6 @@ import {
   payDetailsById,
   payMethodsById,
   payMethodsSorted,
-  pendingFixed,
   personsSorted,
   settings,
   showToast,
@@ -47,7 +46,6 @@ import {
   listSort,
   openAdd,
   openEdit,
-  openFixedWindow,
   openSettings,
   revealFuture,
   searchAllPeriod,
@@ -196,18 +194,10 @@ function Summary({ s, ym }: { s: MonthSummary; ym: string }) {
 /* ───────── 알림 칩 (해당할 때만) ───────── */
 
 function AlertChips({ estimateCount }: { estimateCount: number }) {
-  const pending = pendingFixed.value;
   const f = filter.value;
-  if (!pending.length && !estimateCount && !f.estimateOnly) return null;
-  const thisMonth = ymOf(today.value);
+  if (!estimateCount && !f.estimateOnly) return null;
   return (
     <div class="alert-chips">
-      {pending.length ? (
-        <button type="button" class="alert-chip is-warn" onClick={() => openFixedWindow()}>
-          <Ui name="CalendarDays" size={16} />
-          {pending.includes(thisMonth) ? '이번 달 고정지출 미처리' : `고정지출 미처리 ${pending.length}개월`}
-        </button>
-      ) : null}
       {estimateCount > 0 || f.estimateOnly ? (
         <button
           type="button"

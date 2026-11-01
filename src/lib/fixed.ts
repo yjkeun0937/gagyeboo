@@ -1,5 +1,5 @@
 import { addMonths, clampDay, monthNum, pad, yearNum } from './dates';
-import type { Entry, FixedItem, FixedMonthRun, FixedSchedule } from './types';
+import type { FixedSchedule } from './types';
 
 const monthIndex = (ym: string) => yearNum(ym) * 12 + (monthNum(ym) - 1);
 
@@ -48,61 +48,11 @@ export function fixedEntryId(fixedId: string, ym: string): string {
   return `fx_${fixedId}_${ym.replace('-', '')}`;
 }
 
-export function runId(ym: string): string {
-  return `run_${ym}`;
-}
-
-export interface PlanRow {
-  item: FixedItem;
-  date: string;
-  /** 이미 이 달 내역이 만들어져 있음 */
-  added: boolean;
-}
-
-export interface MonthPlan {
-  ym: string;
-  /** 이 달에 해당하는 사용 중 항목 (순서대로) */
-  due: PlanRow[];
-  /** 사용 중이지만 이 달에는 해당 없는 항목 */
-  others: FixedItem[];
-}
-
-export function planMonth(items: FixedItem[], entries: Entry[], ym: string): MonthPlan {
-  const live = new Set(entries.map((e) => e.id));
-  const active = items.filter((i) => i.active).sort((a, b) => a.order - b.order);
-  const due: PlanRow[] = [];
-  const others: FixedItem[] = [];
-  for (const item of active) {
-    const date = dueDate(item.schedule, ym);
-    if (date) due.push({ item, date, added: live.has(fixedEntryId(item.id, ym)) });
-    else others.push(item);
-  }
-  return { ym, due, others };
-}
-
 /** 월 범위(양 끝 포함), 오래된 순 */
 export function monthsBetween(from: string, to: string): string[] {
   const out: string[] = [];
   for (let ym = from; ym <= to; ym = addMonths(ym, 1)) out.push(ym);
   return out;
-}
-
-/**
- * 월초 입력 창에서 처리해야 하는 달(오래된 순).
- * 앱 사용 시작 월부터 이번 달까지, 처리 기록이 없고 아직 추가하지 않은 해당 항목이 남아 있는 달만 포함한다.
- */
-export function pendingMonths(
-  firstUseYm: string,
-  todayYm: string,
-  runs: FixedMonthRun[],
-  items: FixedItem[],
-  entries: Entry[],
-): string[] {
-  if (firstUseYm > todayYm) return [];
-  const done = new Set(runs.map((r) => r.ym));
-  return monthsBetween(firstUseYm, todayYm).filter(
-    (ym) => !done.has(ym) && planMonth(items, entries, ym).due.some((r) => !r.added),
-  );
 }
 
 export const emptyScheduleFor = (kind: FixedSchedule['kind'], ym: string): FixedSchedule => {

@@ -44,7 +44,7 @@ export const ASSETS_FILE = 'assets.json';
 export const entriesFile = (year: string) => `entries-${year}.json`;
 const ENTRIES_RE = /^entries-(\d{4})\.json$/;
 
-const META_TABLES = ['categories', 'users', 'payMethods', 'payDetails', 'fixedItems', 'fixedRuns'] as const;
+const META_TABLES = ['categories', 'users', 'payMethods', 'payDetails', 'fixedItems', 'fixedRuns', 'fixedSkips'] as const;
 type MetaTable = (typeof META_TABLES)[number];
 
 /** 설정 중 기기 간에 공유하는 것 (테마·글자 크기·정렬 같은 화면 취향은 기기마다 따로 둔다) */
@@ -64,6 +64,7 @@ interface MetaDoc {
   payDetails: Base[];
   fixedItems: Base[];
   fixedRuns: Base[];
+  fixedSkips?: Base[];
   shared?: SharedSettings;
   firstUseYm?: string;
 }

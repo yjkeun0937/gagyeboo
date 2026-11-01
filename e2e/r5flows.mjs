@@ -216,7 +216,7 @@ const amounts = (page, mobile) =>
   await page.locator('.view-toggle').click(); await page.waitForTimeout(200);
 
   // 키보드가 올라와도 입력란이 가려지지 않게 맨 위로 스크롤
-  await page.locator('.fab').click(); await page.waitForSelector('.sheet');
+  await page.locator('.fab:not(.queue-fab)').click(); await page.waitForSelector('.sheet');
   await page.waitForTimeout(400);
   const KB = 340;
   await page.locator('#f-memo').scrollIntoViewIfNeeded();

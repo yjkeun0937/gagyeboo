@@ -412,3 +412,18 @@ describe('동기화: 재산상황', () => {
     expect(drive.byName('assets.json')).toHaveLength(0);
   });
 });
+
+describe('동기화: 입력 대기', () => {
+  it("'입력하지 않음' 기록이 다른 기기로 전달되고, 되돌린(삭제 표시) 것도 전달된다", async () => {
+    const a = new Device('a');
+    const b = new Device('b');
+    await a.db.fixedSkips.put({ id: 'fx_f1_202611', itemId: 'f1', ym: '2026-11', updatedAt: 10 });
+    await a.sync();
+    await b.sync();
+    expect(await b.db.fixedSkips.get('fx_f1_202611')).toBeTruthy();
+    await a.db.fixedSkips.put({ id: 'fx_f1_202611', itemId: 'f1', ym: '2026-11', updatedAt: 20, deleted: true });
+    await a.sync();
+    await b.sync();
+    expect(((await b.db.fixedSkips.get('fx_f1_202611')) as { deleted?: boolean }).deleted).toBe(true);
+  });
+});

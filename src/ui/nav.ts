@@ -74,11 +74,12 @@ export function openSettings(page: SettingsPage, list?: ListsTab) {
   setTab('settings');
 }
 
-/** 고정지출 월초 입력 창. ym은 처음 보여줄 달(없으면 가장 오래된 미처리 달) */
-export const fixedWindow = signal<{ ym?: string } | null>(null);
-export const openFixedWindow = (ym?: string) => (fixedWindow.value = { ym });
-/** 이번 세션에서 월초 입력 창을 이미 닫았는가 (닫은 뒤 다시 자동으로 뜨지 않게) */
-export const fixedPromptShown = signal(false);
+/** 입력 대기 창이 열려 있는가 */
+export const queueWindow = signal(false);
+export const openQueue = () => (queueWindow.value = true);
+export const closeQueue = () => (queueWindow.value = false);
+/** 이번에 앱을 연 뒤 '입력 대기 N건' 알림을 이미 보여 줬는가 */
+export const queueNotified = signal(false);
 
 /** '건수만 표시' 설정에서 건수 칩을 눌러 오늘 이후 항목을 임시로 펼친 상태 */
 export const revealFuture = signal(false);
