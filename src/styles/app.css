@@ -303,6 +303,10 @@ input[type='date'].input {
   color: var(--primary);
   border: 1px solid var(--primary);
 }
+.pill-fixed {
+  color: var(--primary);
+  border: 1px solid var(--primary);
+}
 .pill-estimate {
   color: var(--ink-2);
   border: 1px dashed var(--ink-3);
@@ -1409,6 +1413,33 @@ input[type='date'].input {
   gap: 6px;
   font-weight: 500;
 }
+.lr-title > .pill {
+  margin-right: 0;
+  flex: none;
+}
+.lr-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lr-memo {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-3);
+  font-weight: 400;
+  font-size: 0.9em;
+}
+.lr-amount {
+  flex: none;
+  margin-left: auto;
+  padding-left: 8px;
+  font-weight: 600;
+}
 .lr-meta {
   color: var(--ink-3);
   overflow: hidden;
@@ -1432,6 +1463,9 @@ input[type='date'].input {
 }
 
 @media (max-width: 640px) {
+  .lr-meta {
+    white-space: normal;
+  }
   :root {
     --top-h: 52px;
   }

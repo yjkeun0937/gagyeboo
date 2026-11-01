@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { describeSchedule, emptyScheduleFor, nextDue } from '../lib/fixed';
 import { monthNum, ymOf } from '../lib/dates';
 import { digitsOnly, won } from '../lib/format';
@@ -20,25 +20,27 @@ import {
   updateFixedItem,
   usersById,
 } from '../store/store';
-import { CategoryDot, PayGlyph, Ui, UserGlyph } from '../ui/icons';
-import { openQueue } from '../ui/nav';
-import { askConfirm, Modal } from '../ui/overlay';
+import { CategoryDot, PayGlyph, Ui } from '../ui/icons';
+import { fixedDraft, openQueue, type FixedDraft } from '../ui/nav';
+import { askConfirm, Modal, popover, showPopover } from '../ui/overlay';
 import { Pills } from '../ui/parts';
 import { Chip, PayDetailPicker, UserPicker } from './EntrySheet';
 
 const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 
-function FixedEditor({ initial, onClose }: { initial?: FixedItem; onClose: () => void }) {
+function FixedEditor({ initial, draft, onClose }: { initial?: FixedItem; draft?: FixedDraft; onClose: () => void }) {
   const t = today.value;
-  const [name, setName] = useState(initial?.name ?? '');
-  const [memo, setMemo] = useState(initial?.memo ?? '');
-  const [amount, setAmount] = useState(initial ? String(initial.amount) : '');
+  const [name, setName] = useState(initial?.name ?? draft?.name ?? '');
+  const [memo, setMemo] = useState(initial?.memo ?? draft?.memo ?? '');
+  const [amount, setAmount] = useState(initial ? String(initial.amount) : draft ? String(draft.amount) : '');
   const [mode, setMode] = useState<'fixed' | 'estimate'>(initial?.amountMode ?? 'fixed');
-  const [schedule, setSchedule] = useState<FixedSchedule>(initial?.schedule ?? { kind: 'monthly', day: 1 });
-  const [category, setCategory] = useState(initial?.category ?? null);
-  const [user, setUser] = useState(initial?.user ?? null);
-  const [payMethod, setPayMethod] = useState(initial?.payMethod ?? null);
-  const [payDetail, setPayDetail] = useState(initial?.payDetail ?? null);
+  const [schedule, setSchedule] = useState<FixedSchedule>(
+    initial?.schedule ?? { kind: 'monthly', day: draft?.day ?? 1 },
+  );
+  const [category, setCategory] = useState(initial?.category ?? draft?.category ?? null);
+  const [user, setUser] = useState(initial?.user ?? draft?.user ?? null);
+  const [payMethod, setPayMethod] = useState(initial?.payMethod ?? draft?.payMethod ?? null);
+  const [payDetail, setPayDetail] = useState(initial?.payDetail ?? draft?.payDetail ?? null);
   const [active, setActive] = useState(initial?.active ?? true);
   const [err, setErr] = useState('');
 
@@ -304,7 +306,15 @@ function FixedEditor({ initial, onClose }: { initial?: FixedItem; onClose: () =>
 
 export function FixedPage() {
   const items = fixedItemsSorted.value;
-  const [editor, setEditor] = useState<{ item?: FixedItem } | null>(null);
+  const [editor, setEditor] = useState<{ item?: FixedItem; draft?: FixedDraft } | null>(null);
+  // 사용 내역에서 넘어온 내용이 있으면 바로 등록 창을 연다
+  useEffect(() => {
+    const d = fixedDraft.value;
+    if (d) {
+      fixedDraft.value = null;
+      setEditor({ draft: d });
+    }
+  }, [fixedDraft.value]);
   const fixedWaiting = queue.value.filter((q) => q.kind === 'fixed');
   const months = [...new Set(fixedWaiting.map((q) => q.ym))];
   const thisYm = ymOf(today.value);
@@ -350,21 +360,35 @@ export function FixedPage() {
             const cat = f.category ? categoriesById.value.get(f.category) : undefined;
             const u = f.user ? usersById.value.get(f.user) : undefined;
             const m = f.payMethod ? payMethodsById.value.get(f.payMethod) : undefined;
+            const d = f.payDetail ? payDetails.value.find((x) => x.id === f.payDetail) : undefined;
+            const tip = (active: boolean) =>
+              active ? ['사용 중', '누르면 사용 안 함으로 바꿈'] : ['미사용', '누르면 사용 중으로 바꿈'];
             return (
               <li key={f.id} class={`list-row ${f.active ? '' : 'is-hidden'}`}>
                 <span class="lr-glyph">{m ? <PayGlyph method={m} size={30} /> : <CategoryDot color={cat?.color} />}</span>
                 <button type="button" class="lr-main" onClick={() => setEditor({ item: f })} aria-label={`${f.name} 수정`}>
                   <span class="lr-title">
-                    {f.amountMode === 'estimate' ? <Pills status="normal" estimate /> : null}
-                    {f.name}
+                    <span class="lr-name">{f.name}</span>
+                    {f.memo ? <span class="lr-memo">{f.memo}</span> : null}
+                    <span class="lr-amount num">
+                      {won(f.amount)}원
+                    </span>
+                    {f.amountMode === 'estimate' ? <Pills status="normal" estimate /> : <span class="pill pill-fixed">확정</span>}
                     {!f.active ? <span class="pill pill-estimate">사용 안 함</span> : null}
                   </span>
                   <small class="lr-meta">
-                    {describeSchedule(f.schedule)} · {won(f.amount)}원{u ? ` · ${u.name}` : ''}
+                    {[
+                      describeSchedule(f.schedule),
+                      cat?.name ?? '분류 없음',
+                      u ? u.name : '사용자 미지정',
+                      m ? m.name : null,
+                      d ? d.name : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </small>
                 </button>
                 <span class="lr-actions">
-                  {u ? <UserGlyph user={u} size={24} /> : null}
                   <button type="button" class="icon-btn" aria-label="위로" disabled={i === 0} onClick={() => moveItem('fixedItems', f.id, -1)}>
                     <Ui name="ArrowUp" size={16} />
                   </button>
@@ -374,11 +398,22 @@ export function FixedPage() {
                   <button
                     type="button"
                     class="icon-btn"
-                    aria-label={f.active ? '사용 안 함으로 바꾸기' : '다시 사용하기'}
-                    title={f.active ? '사용 안 함으로 바꾸기' : '다시 사용하기'}
-                    onClick={() => save('fixedItems', { ...f, active: !f.active })}
+                    aria-label={tip(f.active).join(', ')}
+                    aria-pressed={f.active}
+                    onPointerEnter={(e) => {
+                      if (e.pointerType === 'mouse') showPopover(e.currentTarget, tip(f.active)[0], [tip(f.active)[1]]);
+                    }}
+                    onPointerLeave={() => (popover.value = null)}
+                    onClick={(e) => {
+                      const el = e.currentTarget;
+                      const next = !f.active;
+                      save('fixedItems', { ...f, active: next });
+                      // 마우스로 누른 경우 바뀐 상태의 설명으로 바로 갱신한다
+                      if ((e as unknown as PointerEvent).pointerType === 'mouse' || el.matches(':hover'))
+                        showPopover(el, tip(next)[0], [tip(next)[1]]);
+                    }}
                   >
-                    <Ui name={f.active ? 'EyeOff' : 'Eye'} size={16} />
+                    <Ui name={f.active ? 'Eye' : 'EyeOff'} size={16} />
                   </button>
                 </span>
               </li>
@@ -386,7 +421,7 @@ export function FixedPage() {
           })}
         </ul>
       )}
-      {editor ? <FixedEditor initial={editor.item} onClose={() => setEditor(null)} /> : null}
+      {editor ? <FixedEditor initial={editor.item} draft={editor.draft} onClose={() => setEditor(null)} /> : null}
     </div>
   );
 }

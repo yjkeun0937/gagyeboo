@@ -81,6 +81,23 @@ export const closeQueue = () => (queueWindow.value = false);
 /** 이번에 앱을 연 뒤 '입력 대기 N건' 알림을 이미 보여 줬는가 */
 export const queueNotified = signal(false);
 
+/** 사용 내역에서 「고정지출 등록」을 눌렀을 때 고정지출 등록 창에 미리 채울 값 (등록 화면이 읽고 비운다) */
+export interface FixedDraft {
+  name: string;
+  memo: string;
+  amount: number;
+  day: number;
+  category: string | null;
+  user: string | null;
+  payMethod: string | null;
+  payDetail: string | null;
+}
+export const fixedDraft = signal<FixedDraft | null>(null);
+export function openFixedFromEntry(d: FixedDraft) {
+  fixedDraft.value = d;
+  openSettings('fixed');
+}
+
 /** '건수만 표시' 설정에서 건수 칩을 눌러 오늘 이후 항목을 임시로 펼친 상태 */
 export const revealFuture = signal(false);
 

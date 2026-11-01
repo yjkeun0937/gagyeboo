@@ -27,7 +27,7 @@ import {
 } from '../store/store';
 import { uid } from '../lib/format';
 import { CategoryDot, COLOR_CHOICES, PayGlyph, Ui, UserGlyph } from '../ui/icons';
-import { closeSheet, openCopy, sheet } from '../ui/nav';
+import { closeSheet, openCopy, openFixedFromEntry, sheet } from '../ui/nav';
 import { DateField } from '../ui/DateField';
 import { askConfirm, Sheet, showWarning } from '../ui/overlay';
 
@@ -524,6 +524,26 @@ export function EntrySheet() {
               >
                 <Ui name="Copy" size={16} />
                 복사
+              </button>
+              <button
+                type="button"
+                class="btn"
+                onClick={() => {
+                  openFixedFromEntry({
+                    name: form.store.trim() || form.memo.trim(),
+                    memo: form.store.trim() ? form.memo.trim() : '',
+                    amount: amountNum || editing.amount,
+                    day: Number(form.date.slice(8, 10)) || 1,
+                    category: form.category,
+                    user: form.user,
+                    payMethod: form.payMethod,
+                    payDetail: form.payMethod ? form.payDetail : null,
+                  });
+                  closeSheet();
+                }}
+              >
+                <Ui name="CalendarDays" size={16} />
+                고정지출 등록
               </button>
               <span class="grow" />
             </>
