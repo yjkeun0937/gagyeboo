@@ -167,7 +167,14 @@ export const trash = (t: string, id: string) =>
 export const remove = (t: string, id: string) => call(t, `${API}/files/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 /** 구글 파일 선택 창(Picker)으로 폴더(또는 파일)를 고른다. 선택한 항목은 drive.file 범위에서도 접근할 수 있게 된다 */
-export async function pick(token: string, apiKey: string, appId: string, kind: 'folder' | 'file'): Promise<{ id: string; name: string } | null> {
+export async function pick(
+  token: string,
+  apiKey: string,
+  appId: string,
+  kind: 'folder' | 'file',
+  /** 내가 소유하지 않은 항목만 보이게 할지 (공유받은 것을 고를 때). false면 모두 보임 */
+  sharedOnly = true,
+): Promise<{ id: string; name: string } | null> {
   await loadScript('https://apis.google.com/js/api.js');
   const gapi = (window as unknown as { gapi: { load(n: string, cb: () => void): void } }).gapi;
   await new Promise<void>((r) => gapi.load('picker', () => r()));
@@ -176,8 +183,8 @@ export async function pick(token: string, apiKey: string, appId: string, kind: '
   return new Promise((resolve) => {
     const view = new gp.DocsView(kind === 'folder' ? gp.ViewId.FOLDERS : gp.ViewId.DOCS)
       .setIncludeFolders(true)
-      .setSelectFolderEnabled(kind === 'folder')
-      .setOwnedByMe(false);
+      .setSelectFolderEnabled(kind === 'folder');
+    if (sharedOnly) view.setOwnedByMe(false);
     const builder = new gp.PickerBuilder()
       .addView(view)
       .setOAuthToken(token)

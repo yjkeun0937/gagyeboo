@@ -135,10 +135,18 @@ export function ShareLab() {
       if (fs[0]) put({ proposalId: fs[0].id });
     });
 
+  const ownerPickInboxFolder = () =>
+    run('소유자: Picker로 inbox 폴더 고르기', async () => {
+      const t = need('owner').token;
+      const p = await L.pick(t, s.apiKey, s.appId, 'folder', false);
+      out(p ? `  선택: ${p.name} (${p.id})` : '  선택 취소');
+      if (p) put({ inboxId: p.id });
+    });
+
   const ownerPickInbox = () =>
     run('소유자: Picker로 inbox 안 파일 고르기', async () => {
       const t = need('owner').token;
-      const p = await L.pick(t, s.apiKey, s.appId, 'file');
+      const p = await L.pick(t, s.apiKey, s.appId, 'file', false);
       out(p ? `  선택: ${p.name} (${p.id})` : '  선택 취소');
       if (p) put({ proposalId: p.id });
     });
@@ -314,6 +322,7 @@ export function ShareLab() {
         <h2>3. 소유자: 제안 받기·정리</h2>
         <div class="btn-row">
           <Btn label="inbox 읽기" on={ownerListInbox} who="owner" />
+          <Btn label="Picker로 inbox 폴더 고르기" on={ownerPickInboxFolder} who="owner" />
           <Btn label="Picker로 inbox 파일 고르기" on={ownerPickInbox} who="owner" />
           <Btn label="제안 파일 삭제" on={ownerTrash} who="owner" />
         </div>
