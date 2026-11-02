@@ -86,6 +86,10 @@ export function ShareLab() {
       const ses = await L.labSignIn(s.clientId, s.scope);
       (who === 'owner' ? setOwner : setGuest)(ses);
       out(`  로그인: ${ses.email}\n  허용된 범위: ${ses.grantedScope}`);
+      if (!ses.scopeOk)
+        out(
+          `  ⚠ 요청한 범위(${s.scope})가 허용되지 않았습니다. 구글 클라우드 콘솔 → Google Auth Platform → 데이터 액세스에 이 범위가 「저장」되어 있는지 확인하세요. 이 상태로 진행한 시험 결과는 쓸 수 없습니다.`,
+        );
       if (who === 'guest' && !s.guestEmail) put({ guestEmail: ses.email });
     });
 

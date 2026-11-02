@@ -47,6 +47,8 @@ export interface LabSession {
   token: string;
   email: string;
   grantedScope: string;
+  /** 요청한 드라이브 범위가 실제로 허용되었는가 (콘솔의 데이터 액세스에 저장되어 있지 않으면 false) */
+  scopeOk: boolean;
 }
 
 /** 지정한 범위로 로그인한다. 사용자가 누른 직후에 호출해야 팝업이 막히지 않는다 */
@@ -66,7 +68,13 @@ export async function labSignIn(clientId: string, scope: LabScope): Promise<LabS
   const token = res.access_token!;
   const u = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${token}` } });
   const info = (await u.json()) as { email?: string };
-  return { token, email: info.email ?? '(이메일 없음)', grantedScope: res.scope ?? '' };
+  const granted = res.scope ?? '';
+  return {
+    token,
+    email: info.email ?? '(이메일 없음)',
+    grantedScope: granted,
+    scopeOk: granted.split(/\s+/).includes(`https://www.googleapis.com/auth/${scope}`),
+  };
 }
 
 /** 오류도 던지지 않고 상태 코드와 본문을 그대로 돌려준다 (시험 결과를 기록하기 위해) */
