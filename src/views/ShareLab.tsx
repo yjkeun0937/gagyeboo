@@ -42,6 +42,19 @@ const rows = (c: L.LabCall): FileRow[] => ((c.data as { files?: FileRow[] } | nu
 const fmtRow = (f: FileRow) =>
   `  - ${f.name} [${f.mimeType === L.FOLDER ? '폴더' : '파일'}] id=${f.id} 소유=${f.owners?.[0]?.emailAddress ?? '?'} 마지막수정=${f.lastModifyingUser?.emailAddress ?? '?'} 권한=${JSON.stringify(f.capabilities ?? {})}`;
 
+/** 저장된 앱 파일(서비스 워커·캐시)을 지우고 다시 불러온다. 가계부 데이터와 로그인 정보는 건드리지 않는다 */
+async function refreshLatest() {
+  try {
+    const regs = (await navigator.serviceWorker?.getRegistrations?.()) ?? [];
+    await Promise.all(regs.map((r) => r.unregister()));
+    const keys = (await caches?.keys?.()) ?? [];
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  } catch {
+    /* 실패해도 새로고침은 한다 */
+  }
+  location.reload();
+}
+
 export function ShareLab() {
   const [s, setS] = useState<Saved>(() => ({ ...loadSaved(), clientId: getClientId() }));
   const [owner, setOwner] = useState<L.LabSession | null>(null);
@@ -271,6 +284,12 @@ export function ShareLab() {
   return (
     <div class="lab">
       <h1>계정 공유 시험 (개발용)</h1>
+      <p class="lab-version">
+        시험 화면 버전 <b>{typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : '알 수 없음'}</b>
+        <button type="button" class="btn small" onClick={refreshLatest}>
+          최신 버전으로 갱신
+        </button>
+      </p>
       <p class="hint">
         가계부 데이터와 연결되지 않은 시험 화면입니다. 구글 드라이브에 「가계부 공유 시험…」 폴더를 만들고, 다른 계정에 공유해 읽기·쓰기·삭제가
         어떻게 동작하는지 확인합니다. 위에서 아래로 차례로 눌러 주세요.

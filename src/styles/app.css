@@ -3979,3 +3979,12 @@ html.kb-open .fab {
   font-size: 0.78rem;
   line-height: 1.5;
 }
+.lab-version {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 10px;
+  color: var(--ink-2);
+  font-size: 0.9rem;
+}
