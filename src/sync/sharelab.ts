@@ -52,7 +52,7 @@ export interface LabSession {
 }
 
 /** 지정한 범위로 로그인한다. 사용자가 누른 직후에 호출해야 팝업이 막히지 않는다 */
-export async function labSignIn(clientId: string, scope: LabScope): Promise<LabSession> {
+export async function labSignIn(clientId: string, scope: LabScope, forceConsent = true): Promise<LabSession> {
   await loadScript('https://accounts.google.com/gsi/client');
   const oauth = g()?.accounts.oauth2;
   if (!oauth) throw new Error('구글 로그인 스크립트가 준비되지 않았습니다');
@@ -63,7 +63,7 @@ export async function labSignIn(clientId: string, scope: LabScope): Promise<LabS
       callback: (r) => (r.error || !r.access_token ? reject(new Error(r.error_description || r.error || '로그인 실패')) : resolve(r)),
       error_callback: (e) => reject(new Error(e.message || e.type || '로그인 창이 닫혔습니다')),
     });
-    client.requestAccessToken({ prompt: 'select_account' });
+    client.requestAccessToken({ prompt: forceConsent ? 'select_account consent' : 'select_account' });
   });
   const token = res.access_token!;
   const u = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${token}` } });

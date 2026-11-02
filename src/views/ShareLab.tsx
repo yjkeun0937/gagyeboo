@@ -48,6 +48,7 @@ export function ShareLab() {
   const [guest, setGuest] = useState<L.LabSession | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [forceConsent, setForceConsent] = useState(true);
 
   const put = (patch: Partial<Saved>) =>
     setS((x) => {
@@ -83,7 +84,7 @@ export function ShareLab() {
   const signIn = (who: 'owner' | 'guest') =>
     run(`${who === 'owner' ? '소유자' : '손님'} 계정 로그인 (${s.scope})`, async () => {
       if (!s.clientId) throw new Error('클라이언트 ID가 없습니다');
-      const ses = await L.labSignIn(s.clientId, s.scope);
+      const ses = await L.labSignIn(s.clientId, s.scope, forceConsent);
       (who === 'owner' ? setOwner : setGuest)(ses);
       out(`  로그인: ${ses.email}\n  허용된 범위: ${ses.grantedScope}`);
       if (!ses.scopeOk)
@@ -276,6 +277,10 @@ export function ShareLab() {
             <option value="drive.file">drive.file (비민감 · 앱이 만들었거나 사용자가 고른 파일만)</option>
             <option value="drive">drive (전체 · 제한 범위, 미검증 앱 경고 화면이 뜹니다)</option>
           </select>
+        </label>
+        <label class="check">
+          <input type="checkbox" checked={forceConsent} onChange={(e) => setForceConsent(e.currentTarget.checked)} />
+          로그인할 때마다 동의 화면을 강제로 표시 (이미 허용한 계정도 허용 항목을 다시 확인)
         </label>
         <Field label="API 키 (Picker용, 선택)" k="apiKey" />
         <Field label="프로젝트 번호 (Picker용, 선택)" k="appId" />
