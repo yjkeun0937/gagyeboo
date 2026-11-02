@@ -109,6 +109,20 @@ function FixedEditor({ initial, draft, onClose }: { initial?: FixedItem; draft?:
         </>
       }
     >
+      {!initial && draft?.fromFixed ? (
+        <p class="fx-dup" role="note">
+          <Ui name="Info" size={16} />
+          <span>
+            {draft.fromFixed.name ? (
+              <>
+                이 내역은 이미 등록된 고정지출 <b>「{draft.fromFixed.name}」</b>에서 입력된 것입니다. 이대로 등록하면 같은 항목이 고정지출에 하나 더 생깁니다.
+              </>
+            ) : (
+              <>이 내역은 (지금은 삭제된) 고정지출에서 입력된 것입니다. 등록하면 새 고정지출 항목이 생깁니다.</>
+            )}
+          </span>
+        </p>
+      ) : null}
       <div class="field">
         <label for="fx-name">항목 이름 (내역의 사용처로 들어갑니다)</label>
         <input id="fx-name" class="input" value={name} maxLength={40} data-autofocus onInput={(e) => { setName(e.currentTarget.value); setErr(''); }} />
@@ -365,6 +379,9 @@ export function FixedPage() {
               active ? ['사용 중', '누르면 사용 안 함으로 바꿈'] : ['미사용', '누르면 사용 중으로 바꿈'];
             return (
               <li key={f.id} class={`list-row ${f.active ? '' : 'is-hidden'}`}>
+                <span class={`lr-kind ${f.schedule.kind === 'monthly' ? 'is-monthly' : 'is-special'}`}>
+                  {f.schedule.kind === 'monthly' ? '매월' : '특정월일'}
+                </span>
                 <span class="lr-glyph">{m ? <PayGlyph method={m} size={30} /> : <CategoryDot color={cat?.color} />}</span>
                 <button type="button" class="lr-main" onClick={() => setEditor({ item: f })} aria-label={`${f.name} 수정`}>
                   <span class="lr-title">

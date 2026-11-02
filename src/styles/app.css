@@ -1392,6 +1392,25 @@ input[type='date'].input {
 .list-row.is-hidden .lr-glyph {
   opacity: 0.55;
 }
+.lr-kind {
+  display: grid;
+  flex: none;
+  place-items: center;
+  box-sizing: border-box;
+  width: 52px;
+  height: 30px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--ink-2);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.lr-kind.is-monthly {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-soft, transparent);
+}
 .lr-glyph {
   display: grid;
   place-items: center;
@@ -1463,6 +1482,30 @@ input[type='date'].input {
 }
 
 @media (max-width: 640px) {
+  .lr-kind {
+    width: 44px;
+    font-size: 0.64rem;
+  }
+  .list-row {
+    gap: 6px;
+    padding-left: 8px;
+  }
+  .lr-glyph {
+    width: 26px;
+  }
+  .lr-actions .icon-btn {
+    width: 30px;
+  }
+  .lr-title {
+    gap: 4px;
+  }
+  .lr-name {
+    flex-shrink: 0;
+    max-width: 55%;
+  }
+  .lr-amount {
+    padding-left: 4px;
+  }
   .lr-meta {
     white-space: normal;
   }
@@ -3866,4 +3909,23 @@ html.kb-open .fab {
   .q-top {
     flex-wrap: wrap;
   }
+}
+
+.fx-dup {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: var(--amber-soft);
+  border: 1px solid var(--amber);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.fx-dup svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--amber);
 }

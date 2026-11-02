@@ -8,6 +8,7 @@ import {
   addEntry,
   categoriesSorted,
   entries,
+  fixedItems,
   groupsSorted,
   nameTaken,
   nextOrder,
@@ -538,6 +539,10 @@ export function EntrySheet() {
                     user: form.user,
                     payMethod: form.payMethod,
                     payDetail: form.payMethod ? form.payDetail : null,
+                    fromFixed:
+                      editing.source === 'fixed' && editing.fixedId
+                        ? { id: editing.fixedId, name: fixedItems.value.find((x) => x.id === editing.fixedId)?.name ?? null }
+                        : undefined,
                   });
                   closeSheet();
                 }}

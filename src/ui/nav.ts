@@ -91,6 +91,8 @@ export interface FixedDraft {
   user: string | null;
   payMethod: string | null;
   payDetail: string | null;
+  /** 이미 고정지출에서 입력된 내역을 바탕으로 한 경우: 원래 고정지출의 id와 이름(이름은 못 찾으면 null) */
+  fromFixed?: { id: string; name: string | null };
 }
 export const fixedDraft = signal<FixedDraft | null>(null);
 export function openFixedFromEntry(d: FixedDraft) {
