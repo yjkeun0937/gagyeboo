@@ -3929,3 +3929,53 @@ html.kb-open .fab {
   margin-top: 3px;
   color: var(--amber);
 }
+
+/* ───────── 계정 공유 시험 화면 (개발용) ───────── */
+.lab {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 16px 16px 48px;
+}
+.lab h1 {
+  margin: 0 0 8px;
+  font-size: 1.3rem;
+}
+.lab h2 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+.lab-sec {
+  margin: 14px 0;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.lab-field {
+  display: block;
+  margin: 6px 0;
+}
+.lab-field > span {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ink-3);
+  font-size: 0.82rem;
+}
+.lab .btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.lab-log {
+  max-height: 460px;
+  margin: 8px 0 0;
+  padding: 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: var(--bg, #f6f7fb);
+  border-radius: 8px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
