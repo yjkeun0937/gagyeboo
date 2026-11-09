@@ -25,6 +25,8 @@ interface GisOauth {
   initTokenClient(cfg: {
     client_id: string;
     scope: string;
+    /** false면 이전에 허용한 범위를 이번 토큰에 합치지 않는다 (기본값은 true) */
+    include_granted_scopes?: boolean;
     callback: (r: TokenResp) => void;
     error_callback?: (e: { type?: string; message?: string }) => void;
   }): { requestAccessToken(o?: { prompt?: string }): void };
@@ -49,6 +51,8 @@ export interface LabSession {
   grantedScope: string;
   /** 요청한 드라이브 범위가 실제로 허용되었는가 (콘솔의 데이터 액세스에 저장되어 있지 않으면 false) */
   scopeOk: boolean;
+  /** 요청한 것보다 넓은 드라이브 범위(drive)가 섞였는가. drive.file 시험에서는 결과가 무효가 된다 */
+  tooBroad: boolean;
 }
 
 /** 지정한 범위로 로그인한다. 사용자가 누른 직후에 호출해야 팝업이 막히지 않는다 */
@@ -60,6 +64,7 @@ export async function labSignIn(clientId: string, scope: LabScope, forceConsent 
     const client = oauth.initTokenClient({
       client_id: clientId,
       scope: `openid email profile https://www.googleapis.com/auth/${scope}`,
+      include_granted_scopes: false,
       callback: (r) => (r.error || !r.access_token ? reject(new Error(r.error_description || r.error || '로그인 실패')) : resolve(r)),
       error_callback: (e) => reject(new Error(e.message || e.type || '로그인 창이 닫혔습니다')),
     });
@@ -74,6 +79,7 @@ export async function labSignIn(clientId: string, scope: LabScope, forceConsent 
     email: info.email ?? '(이메일 없음)',
     grantedScope: granted,
     scopeOk: granted.split(/\s+/).includes(`https://www.googleapis.com/auth/${scope}`),
+    tooBroad: scope === 'drive.file' && granted.split(/\s+/).includes('https://www.googleapis.com/auth/drive'),
   };
 }
 
