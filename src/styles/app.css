@@ -3988,3 +3988,47 @@ html.kb-open .fab {
   color: var(--ink-2);
   font-size: 0.9rem;
 }
+
+/* ───────── 계정 공유 설정 ───────── */
+.share-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 640px;
+}
+.share-page p {
+  margin: 0;
+}
+.share-points {
+  margin: 0;
+  padding-left: 1.2em;
+  color: var(--ink-2);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+.share-h {
+  margin: 10px 0 0;
+  font-size: 1rem;
+}
+.share-invite {
+  display: flex;
+  gap: 8px;
+}
+.share-invite .input {
+  flex: 1;
+  min-width: 0;
+}
+.share-guests .lr-main.static {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 0;
+  text-align: left;
+}
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}

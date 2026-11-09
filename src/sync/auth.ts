@@ -4,11 +4,13 @@
  */
 const GIS_URL = 'https://accounts.google.com/gsi/client';
 export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
-const SCOPES = `openid email profile ${DRIVE_SCOPE}`;
+/** 계정 공유(주인)에만 쓰는 넓은 범위: 손님이 올린 제안 파일을 읽으려면 필요하다 */
+export const DRIVE_FULL_SCOPE = 'https://www.googleapis.com/auth/drive';
 
 const LS_CLIENT_ID = 'gagyeboo.clientId';
 const LS_TOKEN = 'gagyeboo.token';
 const LS_ACCOUNT = 'gagyeboo.account';
+const LS_SHARE = 'gagyeboo.share';
 
 export interface Account {
   sub: string;
@@ -33,6 +35,7 @@ interface GoogleGlobal {
       initTokenClient(cfg: {
         client_id: string;
         scope: string;
+        include_granted_scopes?: boolean;
         callback: (r: TokenResponse) => void;
         error_callback?: (e: { type?: string; message?: string }) => void;
       }): TokenClient;
@@ -108,6 +111,22 @@ export function saveAccount(a: Account | null) {
   else ls.del(LS_ACCOUNT);
 }
 
+/**
+ * 이 기기에서 계정 공유(주인)를 쓰는가. 켜져 있으면 로그인할 때 드라이브 전체 범위까지 요청한다.
+ * 공유를 쓰지 않는 계정은 지금처럼 앱 전용 폴더 권한만 요청한다.
+ */
+export function shareScopeWanted(): boolean {
+  return ls.get(LS_SHARE) === '1';
+}
+export function setShareScopeWanted(on: boolean) {
+  if (on) ls.set(LS_SHARE, '1');
+  else ls.del(LS_SHARE);
+  tokenClient = null;
+}
+function scopes(): string {
+  return `openid email profile ${DRIVE_SCOPE}${shareScopeWanted() ? ` ${DRIVE_FULL_SCOPE}` : ''}`;
+}
+
 /** 아직 유효한 접근 토큰 (만료 1분 전까지) */
 export function cachedToken(): string | null {
   try {
@@ -118,8 +137,19 @@ export function cachedToken(): string | null {
   }
   return null;
 }
-function storeToken(token: string, expiresInSec: number) {
-  ls.set(LS_TOKEN, JSON.stringify({ token, exp: Date.now() + expiresInSec * 1000 }));
+/** 계정 공유에 쓸 수 있는(드라이브 전체 범위가 들어 있는) 유효한 토큰 */
+export function cachedShareToken(): string | null {
+  try {
+    const t = JSON.parse(ls.get(LS_TOKEN) ?? 'null');
+    if (t && typeof t.token === 'string' && t.exp - 60_000 > Date.now() && String(t.scope ?? '').split(' ').includes(DRIVE_FULL_SCOPE))
+      return t.token;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+function storeToken(token: string, expiresInSec: number, scope = '') {
+  ls.set(LS_TOKEN, JSON.stringify({ token, exp: Date.now() + expiresInSec * 1000, scope }));
 }
 export function forgetToken() {
   ls.del(LS_TOKEN);
@@ -158,7 +188,9 @@ async function ensureClient(): Promise<TokenClient> {
   if (!cid) throw new AuthFlowError('failed', '구글 클라이언트 ID가 설정되지 않았습니다');
   tokenClient ??= window.google!.accounts.oauth2.initTokenClient({
     client_id: cid,
-    scope: SCOPES,
+    scope: scopes(),
+    // 예전에 허용한 넓은 범위가 공유를 쓰지 않는 로그인에 합쳐지지 않게 한다
+    include_granted_scopes: false,
     callback: (r) => {
       const p = pending;
       pending = null;
@@ -189,10 +221,14 @@ export async function requestToken(opts: { prompt?: '' | 'select_account' | 'con
     pending = { resolve, reject };
     client.requestAccessToken({ prompt: opts.prompt ?? '', ...(opts.hint ? { hint: opts.hint } : {}) });
   });
-  if (res.scope && !res.scope.split(' ').includes(DRIVE_SCOPE)) {
+  const granted = (res.scope ?? '').split(' ');
+  if (res.scope && !granted.includes(DRIVE_SCOPE)) {
     throw new AuthFlowError('scope', '드라이브 저장 권한을 허용해야 동기화할 수 있습니다. 다시 로그인하면서 모든 항목을 체크해 주세요');
   }
-  storeToken(res.access_token!, Number(res.expires_in ?? 3600));
+  if (res.scope && shareScopeWanted() && !granted.includes(DRIVE_FULL_SCOPE)) {
+    throw new AuthFlowError('scope', '계정 공유를 쓰려면 드라이브 전체 접근 권한을 허용해야 합니다. 다시 로그인하면서 모든 항목을 체크해 주세요');
+  }
+  storeToken(res.access_token!, Number(res.expires_in ?? 3600), res.scope ?? '');
   return res.access_token!;
 }
 

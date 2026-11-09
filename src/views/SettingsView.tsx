@@ -28,17 +28,19 @@ import { askConfirm } from '../ui/overlay';
 import { viewport } from '../ui/viewport';
 import { FixedPage } from './FixedPage';
 import { AccountPage } from './AccountUi';
+import { SharePage } from './SharePage';
 import { ListsManager } from './ListsManager';
 import { ExportDialog } from './ExportDialog';
 import { ImportWizard } from './ImportWizard';
 
-const MENU: { id: SettingsPage; label: string; desc: string; icon: 'CalendarDays' | 'ListChecks' | 'Palette' | 'Cloud' | 'Database' | 'Info' | 'Target' | 'Gauge' }[] = [
+const MENU: { id: SettingsPage; label: string; desc: string; icon: 'CalendarDays' | 'ListChecks' | 'Palette' | 'Cloud' | 'Database' | 'Info' | 'Target' | 'Gauge' | 'Users' }[] = [
   { id: 'fixed', label: '고정지출', desc: '매달 반복되는 지출 등록', icon: 'CalendarDays' },
   { id: 'lists', label: '목록 관리', desc: '사용자·지불수단·결제상세·분류', icon: 'ListChecks' },
   { id: 'goal', label: '월간 목표', desc: '월간 목표 지출액과 초과 경고', icon: 'Target' },
   { id: 'budget', label: '분류별 예산', desc: '분류마다 한 달 한도와 진행률', icon: 'Gauge' },
   { id: 'display', label: '화면', desc: '테마·아이콘 표시·글자 크기', icon: 'Palette' },
   { id: 'account', label: '계정·동기화', desc: '구글 로그인과 기기 간 동기화', icon: 'Cloud' },
+  { id: 'share', label: '계정 공유', desc: '손님에게 가계부 보여 주기·제안 받기', icon: 'Users' },
   { id: 'data', label: '데이터 관리', desc: '엑셀 가져오기·내보내기, 백업·복원, 초기화', icon: 'Database' },
   { id: 'about', label: '앱 정보', desc: '버전과 저장 방식', icon: 'Info' },
 ];
@@ -583,6 +585,8 @@ function Page({ id }: { id: SettingsPage }) {
       return <DisplayPage />;
     case 'account':
       return <AccountPage />;
+    case 'share':
+      return <SharePage />;
     case 'data':
       return <DataPage />;
     case 'about':

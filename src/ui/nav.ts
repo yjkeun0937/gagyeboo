@@ -3,7 +3,7 @@ import type { ListSort } from '../lib/calc';
 import { EMPTY_FILTER, type AssetCategory, type DefaultView, type Entry, type EntryFilter } from '../lib/types';
 
 export type Tab = 'history' | 'stats' | 'assets' | 'settings';
-export type SettingsPage = 'fixed' | 'lists' | 'goal' | 'budget' | 'display' | 'account' | 'data' | 'about';
+export type SettingsPage = 'fixed' | 'lists' | 'goal' | 'budget' | 'display' | 'account' | 'share' | 'data' | 'about';
 export type ListsTab = 'users' | 'payMethods' | 'payDetails' | 'categories';
 
 function load<T extends string>(key: string, allowed: readonly T[], fallback: T): T {

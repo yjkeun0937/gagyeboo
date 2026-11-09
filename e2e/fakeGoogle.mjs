@@ -6,6 +6,8 @@ export class FakeGoogle {
   expired = false; // true면 드라이브 요청에 401
   offline = false; // true면 구글에 닿지 못함(네트워크 오류)
   log = [];
+  gfiles = new Map(); // 공유용 파일·폴더(앱 전용 폴더 밖): id -> {id,name,mimeType,parents,owner,content,perms,trashed}
+  fullScope = true; // false면 드라이브 전체 범위가 허용되지 않은 것처럼 동작
   accounts = {
     alice: { sub: 'sub-alice', name: '앨리스', email: 'alice@example.com' },
     bob: { sub: 'sub-bob', name: '밥', email: 'bob@example.com' },
@@ -34,9 +36,13 @@ export class FakeGoogle {
                 const mode = window.__FAKE_MODE || 'ok';
                 if (mode === 'closed') return cfg.error_callback({ type: 'popup_closed' });
                 const who = window.__FAKE_ACCOUNT || localStorage.getItem('fakeAccount') || 'alice';
-                const scope = mode === 'noscope' ? 'openid email profile' : 'openid email profile https://www.googleapis.com/auth/drive.appdata';
+                let scope = mode === 'noscope' ? 'openid email profile' : cfg.scope;
+                if (window.__FAKE_NOFULL) scope = scope.split(' ').filter((x) => x !== 'https://www.googleapis.com/auth/drive').join(' ');
+                const full = scope.split(' ').includes('https://www.googleapis.com/auth/drive');
                 window.__LAST_PROMPT = o && o.prompt; window.__LAST_HINT = o && o.hint;
-                cfg.callback({ access_token: 'tok-' + who, expires_in: 3600, scope });
+                window.__LAST_SCOPE = cfg.scope; window.__LAST_INCLUDE = cfg.include_granted_scopes;
+                window.__TOKEN_REQUESTS = (window.__TOKEN_REQUESTS || 0) + 1;
+                cfg.callback({ access_token: 'tok-' + who + (full ? '+full' : ''), expires_in: 3600, scope });
               } };
             },
             revoke(t, done) { window.__REVOKED = t; done && done(); }
@@ -50,13 +56,78 @@ export class FakeGoogle {
       if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
       const url = new URL(req.url());
       const auth = req.headers()['authorization'] || '';
-      const who = auth.replace('Bearer tok-', '');
+      const tok = auth.replace('Bearer tok-', '').split('+');
+      const who = tok[0];
+      const full = tok.includes('full');
       const acct = this.accounts[who];
       const json = (status, body) => route.fulfill({ status, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify(body) });
       if (!acct || this.expired) return json(401, { error: { code: 401, message: 'Invalid Credentials' } });
       this.log.push(`${req.method()} ${url.pathname}${url.search ? '?' + url.searchParams.get('uploadType') || url.searchParams.get('alt') || '' : ''}`);
       if (url.pathname === '/oauth2/v3/userinfo') return json(200, { sub: acct.sub, name: acct.name, email: acct.email });
       const d = this.drive(acct.sub);
+      // ── 공유용(앱 전용 폴더 밖) 파일·폴더·권한: 드라이브 전체 범위가 있어야 한다
+      const sm = url.pathname.match(/\/(?:upload\/)?drive\/v3\/files(?:\/([^/]+))?(?:\/permissions(?:\/([^/]+))?)?$/);
+      const isPerm = /\/permissions/.test(url.pathname);
+      const sid = sm?.[1];
+      const body0 = req.postData() || '';
+      const isUploadCreate = req.method() === 'POST' && url.pathname.startsWith('/upload/');
+      const sharedCall =
+        isPerm ||
+        (sid && this.gfiles.has(sid)) ||
+        (req.method() === 'POST' && !sid && !url.pathname.startsWith('/upload/')) ||
+        (isUploadCreate && !/appDataFolder/.test(body0));
+      if (sharedCall) {
+        if (!full) return json(403, { error: { code: 403, message: 'insufficient scope', errors: [{ reason: 'insufficientPermissions' }] } });
+        const gf = (x) => ({ id: x.id, name: x.name, mimeType: x.mimeType, trashed: x.trashed });
+        if (isPerm) {
+          const f = this.gfiles.get(sid);
+          if (!f) return json(404, { error: { message: 'File not found: ' + sid } });
+          const pid = sm?.[2];
+          if (req.method() === 'POST') {
+            const b = JSON.parse(body0);
+            if (!/@gmail\.com$|@example\.com$/.test(b.emailAddress)) return json(400, { error: { code: 400, message: 'Invalid value for emailAddress' } });
+            const p = { id: 'perm' + ++this.seq, role: b.role, emailAddress: b.emailAddress };
+            f.perms.push(p);
+            return json(200, p);
+          }
+          if (req.method() === 'GET') return json(200, { permissions: [{ id: 'own', role: 'owner', emailAddress: f.owner }, ...f.perms] });
+          if (req.method() === 'DELETE') {
+            f.perms = f.perms.filter((p) => p.id !== pid);
+            return route.fulfill({ status: 204, headers: cors });
+          }
+        }
+        if (isUploadCreate) {
+          const boundary = (req.headers()['content-type'] || '').match(/boundary=(.+)$/)[1];
+          const parts = body0.split(`--${boundary}`).filter((p) => p.trim() && p.trim() !== '--');
+          const meta = JSON.parse(parts[0].split('\r\n\r\n')[1].trim());
+          const content = parts[1].split('\r\n\r\n').slice(1).join('\r\n\r\n').replace(/\r\n$/, '');
+          const x = { id: 'g' + ++this.seq, name: meta.name, mimeType: meta.mimeType, parents: meta.parents, owner: acct.email, content, perms: [], trashed: false, writes: 1 };
+          this.gfiles.set(x.id, x);
+          return json(200, gf(x));
+        }
+        if (req.method() === 'POST' && !sid) {
+          const meta = JSON.parse(body0);
+          const x = { id: 'g' + ++this.seq, name: meta.name, mimeType: meta.mimeType, parents: meta.parents || [], owner: acct.email, content: '', perms: [], trashed: false };
+          this.gfiles.set(x.id, x);
+          return json(200, gf(x));
+        }
+        const f = this.gfiles.get(sid);
+        if (!f) return json(404, { error: { message: 'File not found: ' + sid } });
+        if (req.method() === 'PATCH' && url.pathname.startsWith('/upload/')) {
+          f.content = body0;
+          f.writes = (f.writes || 0) + 1;
+          return json(200, gf(f));
+        }
+        if (req.method() === 'PATCH') {
+          const b = JSON.parse(body0 || '{}');
+          if ('trashed' in b) f.trashed = !!b.trashed;
+          return json(200, gf(f));
+        }
+        if (req.method() === 'GET') {
+          if (url.searchParams.get('alt') === 'media') return route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' }, body: f.content });
+          return json(200, gf(f));
+        }
+      }
       const info = (id) => ({ id, name: d.get(id).name, version: String(d.get(id).version) });
       const m = url.pathname.match(/\/(?:upload\/)?drive\/v3\/files(?:\/([^/]+))?$/);
       if (!m) return json(404, { error: { message: 'unknown ' + url.pathname } });

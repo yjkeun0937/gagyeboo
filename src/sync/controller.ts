@@ -21,6 +21,7 @@ import {
 } from './auth';
 import { AuthError, GoogleDriveClient, OfflineError } from './drive';
 import { emptySyncState, previewMerge, syncOnce, SyncError, type SyncState } from './engine';
+import { clearShareLocal, initShare, restoreShareFromDrive, schedulePublish, shareConfig } from './share';
 
 export type SyncStatus = 'local' | 'idle' | 'syncing' | 'offline' | 'reconnect' | 'error';
 
@@ -94,6 +95,8 @@ export async function syncNow(reason: SyncReason = 'manual'): Promise<void> {
     lastSyncAt.value = r.state.lastSyncAt ?? Date.now();
     if (r.pulled > 0 || r.changed) await reloadFromDb();
     syncStatus.value = 'idle';
+    if (reason === 'start' || reason === 'login' || reason === 'manual') await restoreShareFromDrive();
+    if (r.pulled > 0 || r.changed || reason === 'login') schedulePublish(5000);
   } catch (e) {
     if (e instanceof AuthError) {
       forgetToken();
@@ -200,6 +203,7 @@ export async function signOut(keepLocal: boolean, driveErased = false): Promise<
   syncError.value = null;
   lastSyncAt.value = null;
   await db().meta.delete('syncState');
+  await clearShareLocal();
   if (!keepLocal) await wipeLocalOnly();
   showToast(
     driveErased
@@ -242,6 +246,10 @@ export async function ensureDriveAccess(): Promise<boolean> {
  */
 export async function eraseDriveAndSignOut(keepLocal: boolean): Promise<boolean> {
   if (!account.value) return false;
+  if (shareConfig.value) {
+    showToast('계정 공유가 켜져 있습니다. 설정 → 계정 공유에서 공유를 먼저 끈 뒤 지워 주세요');
+    return false;
+  }
   erasing = true;
   clearTimeout(timer);
   try {
@@ -272,7 +280,11 @@ let lastRun = 0;
 export async function initSync(): Promise<void> {
   if (started) return;
   started = true;
-  setChangeListener(scheduleSync);
+  await initShare();
+  setChangeListener(() => {
+    scheduleSync();
+    schedulePublish();
+  });
   const acc = loadAccount();
   account.value = acc;
   if (acc) {
