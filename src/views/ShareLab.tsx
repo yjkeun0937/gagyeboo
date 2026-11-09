@@ -17,8 +17,10 @@ interface Saved {
   dataId: string;
   inboxId: string;
   proposalId: string;
+  helloId: string;
+  pickedId: string;
 }
-const EMPTY: Saved = { clientId: '', scope: 'drive.file', apiKey: '', appId: '', guestEmail: '', rootId: '', dataId: '', inboxId: '', proposalId: '' };
+const EMPTY: Saved = { clientId: '', scope: 'drive.file', apiKey: '', appId: '', guestEmail: '', rootId: '', dataId: '', inboxId: '', proposalId: '', helloId: '', pickedId: '' };
 
 function loadSaved(): Saved {
   try {
@@ -122,7 +124,7 @@ export function ShareLab() {
       out(`  data: ${did}\n  inbox: ${iid}`);
       const f = await L.createJson(t, 'hello.json', did, JSON.stringify({ hello: '소유자가 올린 파일', at: new Date().toISOString() }));
       out(`  hello.json: ${brief(f)}`);
-      put({ rootId: rid, dataId: did, inboxId: iid });
+      put({ rootId: rid, dataId: did, inboxId: iid, helloId: (f.data as { id?: string })?.id ?? '' });
     });
 
   const shareAll = () =>
@@ -190,9 +192,12 @@ export function ShareLab() {
     run('손님: "나와 공유" 목록 조회 (Picker 없이 폴더가 보이는가)', async () => {
       const c = await L.sharedWithMe(need('guest').token);
       out(`  HTTP ${c.status}`);
-      const fs = rows(c);
-      if (!fs.length) out('  (보이는 항목 없음)');
+      const all = rows(c);
+      // 다른 사람이 공유한 개인 파일이 기록에 섞이지 않도록 시험 폴더만 표시한다
+      const fs = all.filter((f) => /가계부 공유 시험|^inbox$|^data$/.test(f.name));
+      if (!fs.length) out('  (시험 폴더가 보이지 않음)');
       fs.forEach((f) => out(fmtRow(f)));
+      out(`  그 외 ${all.length - fs.length}개 항목은 이 기록에 표시하지 않음 (손님 계정에 공유된 다른 파일들)`);
     });
 
   const guestPick = () =>
@@ -257,6 +262,33 @@ export function ShareLab() {
       if (!s.proposalId) throw new Error('대상 파일 ID가 없습니다');
       out(`  수정: ${brief(await L.updateText(t, s.proposalId, '{"edited":"손님이 수정"}'))}`);
       out(`  삭제: ${brief(await L.remove(t, s.proposalId))}`);
+    });
+
+  /* ───── 4회차: 소유자 drive 범위 + 손님 drive.file(Picker) ───── */
+  const ownerUpdateHello = () =>
+    run('소유자: data/hello.json 내용 갱신', async () => {
+      const t = need('owner').token;
+      if (!s.helloId) throw new Error('hello.json ID가 없습니다 (폴더·파일 만들기를 먼저 눌러 주세요)');
+      out(`  ${brief(await L.updateText(t, s.helloId, JSON.stringify({ hello: '소유자가 갱신한 내용', at: new Date().toISOString() })))}`);
+    });
+
+  const guestPickFile = () =>
+    run('손님: Picker로 공유받은 hello.json 고르기 → 읽기', async () => {
+      const t = need('guest').token;
+      const p = await L.pick(t, s.apiKey, s.appId, 'file');
+      out(p ? `  선택: ${p.name} (${p.id})` : '  선택 취소');
+      if (!p) return;
+      put({ pickedId: p.id });
+      out(`  파일 정보: ${brief(await L.getFile(t, p.id))}`);
+      out(`  내용: ${brief(await L.readText(t, p.id))}`);
+    });
+
+  const guestReadPicked = () =>
+    run('손님: 고른 파일 다시 읽기 (소유자 갱신·재로그인 뒤)', async () => {
+      const t = need('guest').token;
+      if (!s.pickedId) throw new Error('고른 파일 ID가 없습니다');
+      out(`  내용: ${brief(await L.readText(t, s.pickedId))}`);
+      out(`  수정 시도(거부되어야 정상): ${brief(await L.updateText(t, s.pickedId, '{"hacked":true}'))}`);
     });
 
   const copy = async () => {
@@ -356,11 +388,26 @@ export function ShareLab() {
       </section>
 
       <section class="lab-sec">
+        <h2>5. 4회차: 소유자는 drive, 손님은 drive.file + Picker</h2>
+        <p class="hint">
+          소유자는 범위를 drive, 손님은 drive.file로 각각 새로 로그인한 뒤(위 권한 범위 선택을 바꿔 가며) 시험합니다. 시험 전에 소유자가
+          「폴더·파일 만들기」→「손님에게 공유」를 하세요.
+        </p>
+        <div class="btn-row">
+          <Btn label="소유자: hello.json 갱신" on={ownerUpdateHello} who="owner" />
+          <Btn label="손님: Picker로 hello.json 고르기" on={guestPickFile} who="guest" />
+          <Btn label="손님: 고른 파일 다시 읽기" on={guestReadPicked} who="guest" />
+        </div>
+      </section>
+
+      <section class="lab-sec">
         <h2>현재 ID</h2>
         <Field label="루트 폴더 ID" k="rootId" />
         <Field label="data 폴더 ID" k="dataId" />
         <Field label="inbox 폴더 ID" k="inboxId" />
         <Field label="대상 제안 파일 ID" k="proposalId" />
+        <Field label="hello.json ID" k="helloId" />
+        <Field label="손님이 Picker로 고른 파일 ID" k="pickedId" />
       </section>
 
       <section class="lab-sec">
