@@ -1,5 +1,6 @@
 import { signal } from '@preact/signals';
 import type { ListSort } from '../lib/calc';
+import { guestMode } from '../store/mode';
 import { EMPTY_FILTER, type AssetCategory, type DefaultView, type Entry, type EntryFilter } from '../lib/types';
 
 export type Tab = 'history' | 'stats' | 'assets' | 'settings';
@@ -63,9 +64,13 @@ export const closeSheet = () => (sheet.value = null);
 /** 재산 항목 입력·상세 창. add는 새 항목(분류 미리 고르기 가능), edit는 항목 열기, copy는 복사해서 새로 */
 export type AssetSheetState = { mode: 'add'; category?: AssetCategory } | { mode: 'edit' | 'copy'; id: string };
 export const assetSheet = signal<AssetSheetState | null>(null);
-export const openAssetAdd = (category?: AssetCategory) => (assetSheet.value = { mode: 'add', category });
+export const openAssetAdd = (category?: AssetCategory) => {
+  if (!guestMode.value) assetSheet.value = { mode: 'add', category };
+};
 export const openAssetEdit = (id: string) => (assetSheet.value = { mode: 'edit', id });
-export const openAssetCopy = (id: string) => (assetSheet.value = { mode: 'copy', id });
+export const openAssetCopy = (id: string) => {
+  if (!guestMode.value) assetSheet.value = { mode: 'copy', id };
+};
 export const closeAssetSheet = () => (assetSheet.value = null);
 
 export function openSettings(page: SettingsPage, list?: ListsTab) {
@@ -76,7 +81,9 @@ export function openSettings(page: SettingsPage, list?: ListsTab) {
 
 /** 입력 대기 창이 열려 있는가 */
 export const queueWindow = signal(false);
-export const openQueue = () => (queueWindow.value = true);
+export const openQueue = () => {
+  if (!guestMode.value) queueWindow.value = true;
+};
 export const closeQueue = () => (queueWindow.value = false);
 /** 이번에 앱을 연 뒤 '입력 대기 N건' 알림을 이미 보여 줬는가 */
 export const queueNotified = signal(false);

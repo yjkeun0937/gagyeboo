@@ -4032,3 +4032,44 @@ a.btn {
   gap: 6px;
   text-decoration: none;
 }
+
+/* ───────── 손님 모드 (읽기 전용 사본) ───────── */
+.ro-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: contents;
+}
+.guest-banner {
+  background: var(--primary-soft, var(--amber-soft));
+  border-bottom-color: var(--primary, var(--amber));
+}
+.guest-banner.is-cut {
+  background: var(--amber-soft);
+  border-bottom-color: var(--amber);
+}
+.account-chip.guest-chip.is-idle {
+  color: var(--ink-2);
+}
+.propose-hint {
+  margin: 0 0 4px;
+}
+.outbox-list .lr-main.static {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 0;
+  text-align: left;
+}
+.guest-join {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 640px;
+  margin-top: 24px;
+}
+.guest-join p {
+  margin: 0;
+}

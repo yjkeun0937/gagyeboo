@@ -27,7 +27,8 @@ import {
   type TableName,
   type User,
 } from '../lib/types';
-import { SCHEMA_VERSION, db, openDb } from './db';
+import { SCHEMA_VERSION, db, openDb, type LedgerDB } from './db';
+import { assertWritable, guestMode } from './mode';
 
 /* ───────── 상태 ───────── */
 
@@ -230,6 +231,7 @@ export function nextStamp(): number {
 }
 
 export async function save<T extends TableName>(table: T, item: Rows[T]): Promise<Rows[T]> {
+  assertWritable();
   const next = { ...item, updatedAt: Date.now() } as Rows[T];
   await (db()[table] as unknown as { put(r: Rows[T]): Promise<unknown> }).put(next);
   const s = sigs[table] as Signal<Rows[T][]>;
@@ -412,6 +414,7 @@ export interface QueueUndo {
  * 처리한 건은 목록에서 사라진다. 돌려준 값으로 되돌릴 수 있다.
  */
 export async function applyQueue(decisions: QueueDecision[]): Promise<QueueUndo> {
+  assertWritable();
   const undo: QueueUndo = { entered: [], skips: [], proposals: [] };
   const liveIds = new Set(entries.value.map((e) => e.id));
   for (const { item, action } of decisions) {
@@ -468,6 +471,7 @@ export async function applyQueue(decisions: QueueDecision[]): Promise<QueueUndo>
 
 /** applyQueue를 되돌린다. 입력했던 내역을 지우고, 입력하지 않음 기록·제안을 되살린다 */
 export async function undoQueue(u: QueueUndo): Promise<void> {
+  assertWritable();
   for (const { id, fixed } of u.entered) {
     const cur = entries.value.find((e) => e.id === id);
     if (cur) await save('entries', { ...cur, deleted: true, queueUndone: fixed ? true : undefined });
@@ -485,6 +489,7 @@ export type AssetInput = Pick<
 
 /** 항목과 이력 한 줄을 함께 저장한다 (둘 다 저장되거나 둘 다 안 된다) */
 async function commitAsset(asset: Asset, log: AssetLog | null): Promise<Asset> {
+  assertWritable();
   const d = db();
   const at = nextStamp();
   const a: Asset = { ...asset, updatedAt: at };
@@ -561,6 +566,7 @@ export async function setAssetState(
 
 /** 방금 한 수정·상태 변경을 취소한다: 이전 값을 되돌리고 그 이력 한 줄을 지운다 */
 export async function undoAssetChange(u: AssetUndo): Promise<void> {
+  assertWritable();
   const l = assetLogs.value.find((x) => x.id === u.logId);
   const d = db();
   const at = nextStamp();
@@ -576,6 +582,7 @@ export async function undoAssetChange(u: AssetUndo): Promise<void> {
 
 /** 완전 삭제: 항목과 이력을 모두 지운다 (다른 기기에서도 지워진다) */
 export async function purgeAsset(id: ID): Promise<void> {
+  assertWritable();
   const a = assets.value.find((x) => x.id === id);
   if (!a) return;
   const d = db();
@@ -594,6 +601,8 @@ export async function purgeAsset(id: ID): Promise<void> {
 /* ───────── 설정 ───────── */
 
 export async function updateSettings(patch: Partial<AppSettings>) {
+  // 월간 목표·미래 내역 표시는 주인의 설정이므로 손님은 바꿀 수 없다 (화면 취향은 손님 기기에서 바꿀 수 있다)
+  if ('monthlyGoal' in patch || 'futureDisplay' in patch) assertWritable();
   const next = { ...settings.value, ...patch };
   settings.value = next;
   await db().meta.put({ key: 'settings', value: next });
@@ -626,8 +635,7 @@ export interface BackupFile {
   assetLogs?: AssetLog[];
 }
 
-export async function exportAll(): Promise<BackupFile> {
-  const d = db();
+export async function exportAll(d: LedgerDB = db()): Promise<BackupFile> {
   const [e, c, u, p, pd, fi, fr, as, al, fs] = await Promise.all([
     d.entries.toArray(),
     d.categories.toArray(),
@@ -644,7 +652,7 @@ export async function exportAll(): Promise<BackupFile> {
     app: 'gagyeboo',
     schemaVersion: SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
-    settings: settings.value,
+    settings: d === db() ? settings.value : { ...DEFAULT_SETTINGS, ...(((await d.meta.get('settings'))?.value as Partial<AppSettings> | undefined) ?? {}) },
     entries: e,
     categories: c,
     users: u,
@@ -702,6 +710,7 @@ async function replaceAllRows(rows: { [K in TableName]?: Base[] }, leave: TableN
 }
 
 export async function importAll(data: BackupFile): Promise<void> {
+  assertWritable();
   const d = db();
   await replaceAllRows({
     entries: data.entries,
@@ -729,8 +738,50 @@ export async function importAll(data: BackupFile): Promise<void> {
   onLocalChange?.();
 }
 
+/**
+ * 손님 모드: 주인의 미러(사본)로 이 기기의 손님 저장소를 통째로 바꾼다. 읽기 전용 상태에서도 이 함수로만 쓸 수 있다.
+ * 동기화와 무관한 저장소이므로 삭제 표시를 남기지 않고 그대로 바꾸며, 화면 취향(테마·글자 크기 등)은 손님 것을 유지한다.
+ */
+export async function installCopy(data: BackupFile, firstUse: string | null): Promise<void> {
+  if (!guestMode.value) throw new Error('손님 모드에서만 쓸 수 있습니다');
+  await writeCopy(db(), data, firstUse);
+  await loadFromDb();
+}
+
+/** 지정한 저장소(보통 손님용 저장소)를 사본 내용으로 바꾼다. 화면 상태는 건드리지 않는다 */
+export async function writeCopy(d: LedgerDB, data: BackupFile, firstUse: string | null): Promise<void> {
+  const rows: { [K in TableName]?: Base[] } = {
+    entries: data.entries,
+    categories: data.categories,
+    users: data.users,
+    payMethods: data.payMethods,
+    payDetails: data.payDetails,
+    fixedItems: data.fixedItems ?? [],
+    fixedRuns: data.fixedRuns ?? [],
+    fixedSkips: data.fixedSkips ?? [],
+    assets: data.assets ?? [],
+    assetLogs: data.assetLogs ?? [],
+  };
+  const mine = (await d.meta.get('settings'))?.value as Partial<AppSettings> | undefined;
+  await d.transaction('rw', [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns, d.fixedSkips, d.proposals, d.assets, d.assetLogs, d.meta], async () => {
+    for (const t of ALL_TABLES) {
+      const table = d[t] as unknown as { clear(): Promise<void>; bulkPut(r: Base[]): Promise<unknown> };
+      await table.clear();
+      await table.bulkPut(rows[t] ?? []);
+    }
+    const owner = data.settings;
+    await d.meta.put({
+      key: 'settings',
+      value: { ...DEFAULT_SETTINGS, ...(mine ?? {}), monthlyGoal: owner?.monthlyGoal ?? null, futureDisplay: owner?.futureDisplay ?? 'all' },
+    });
+    if (firstUse) await d.meta.put({ key: 'firstUseYm', value: firstUse });
+    await d.meta.put({ key: 'seeded', value: true });
+  });
+}
+
 /** 모든 내역과 목록을 지우고 기본 분류·지불수단으로 되돌린다. (로그인 중이면 다른 기기에도 전파된다) */
 export async function resetAll(): Promise<void> {
+  assertWritable();
   const d = db();
   const now = Date.now();
   await replaceAllRows({
@@ -751,6 +802,7 @@ export async function resetAll(): Promise<void> {
  * (로그아웃하면서 '이 기기에서 삭제'를 고른 경우)
  */
 export async function wipeLocalOnly(): Promise<void> {
+  assertWritable();
   const d = db();
   await d.transaction('rw', [d.entries, d.categories, d.users, d.payMethods, d.payDetails, d.fixedItems, d.fixedRuns, d.fixedSkips, d.proposals, d.assets, d.assetLogs, d.meta], async () => {
     await Promise.all([
@@ -792,6 +844,7 @@ export interface ImportBatchMeta {
 
 /** 확정: 새 목록과 내역을 한 번에 저장한다. 도중에 실패하면 아무것도 저장되지 않는다. */
 export async function commitImport(plan: ImportPlan, label: string): Promise<ImportBatchMeta> {
+  assertWritable();
   const d = db();
   const at = Date.now();
   const meta: ImportBatchMeta = {
@@ -839,6 +892,7 @@ export async function findLastImport(): Promise<LastImport | null> {
 
 /** 가져오기 묶음을 통째로 지운다. removeNew이면 그때 새로 등록한 목록 중 이제 쓰이지 않는 것도 지운다 */
 export async function undoImport(batchId: string, removeNew: boolean): Promise<{ entries: number; lists: number }> {
+  assertWritable();
   const targets = entries.value.filter((e) => e.importBatchId === batchId);
   const d = db();
   const now = Date.now();

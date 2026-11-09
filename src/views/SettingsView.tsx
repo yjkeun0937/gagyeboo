@@ -29,6 +29,8 @@ import { viewport } from '../ui/viewport';
 import { FixedPage } from './FixedPage';
 import { AccountPage } from './AccountUi';
 import { SharePage } from './SharePage';
+import { GuestJoin, GuestPage } from './GuestUi';
+import { guestMode } from '../store/mode';
 import { ListsManager } from './ListsManager';
 import { ExportDialog } from './ExportDialog';
 import { ImportWizard } from './ImportWizard';
@@ -586,7 +588,14 @@ function Page({ id }: { id: SettingsPage }) {
     case 'account':
       return <AccountPage />;
     case 'share':
-      return <SharePage />;
+      return guestMode.value ? (
+        <GuestPage />
+      ) : (
+        <>
+          <SharePage />
+          <GuestJoin />
+        </>
+      );
     case 'data':
       return <DataPage />;
     case 'about':
@@ -594,19 +603,27 @@ function Page({ id }: { id: SettingsPage }) {
   }
 }
 
+/** 손님 모드에서 쓸 수 있는 설정: 공유받은 가계부, 화면, 앱 정보 */
+const GUEST_PAGES: SettingsPage[] = ['share', 'display', 'about'];
+
 export function SettingsView() {
   const vp = viewport.value;
-  const cur = settingsPage.value;
+  const guest = guestMode.value;
+  const menu = guest
+    ? GUEST_PAGES.map((id) => MENU.find((m) => m.id === id)!).map((m) => (m.id === 'share' ? { ...m, label: '공유받은 가계부', desc: '읽기 전용 사본과 내가 보낸 제안' } : m))
+    : MENU;
+  const cur0 = settingsPage.value;
+  const cur = guest && cur0 && !GUEST_PAGES.includes(cur0) ? null : cur0;
   const mobile = vp === 'mobile';
-  const page = cur ?? (mobile ? null : 'lists');
-  const item = MENU.find((m) => m.id === page);
+  const page = cur ?? (mobile ? null : guest ? 'share' : 'lists');
+  const item = menu.find((m) => m.id === page);
 
   if (mobile && !page) {
     return (
       <div class="settings">
         <h2 class="page-title">설정</h2>
         <ul class="menu-list">
-          {MENU.map((m) => (
+          {menu.map((m) => (
             <li key={m.id}>
               <button type="button" class="menu-item" onClick={() => (settingsPage.value = m.id)}>
                 <Ui name={m.icon} size={20} />
@@ -627,7 +644,7 @@ export function SettingsView() {
     <div class={`settings ${mobile ? 'is-detail' : 'is-split'}`}>
       {!mobile ? (
         <nav class="side-menu" aria-label="설정 메뉴">
-          {MENU.map((m) => (
+          {menu.map((m) => (
             <button
               key={m.id}
               type="button"

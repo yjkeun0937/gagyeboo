@@ -20,6 +20,9 @@ import { ConfirmLayer, PopoverLayer, ToastLayer, WarningLayer } from './ui/overl
 import { Ui } from './ui/icons';
 import { applyUpdate, updateReady } from './pwa';
 import { AccountChip, AccountModal, LogoutDialog } from './views/AccountUi';
+import { GuestBanner, GuestChip } from './views/GuestUi';
+import { guestLink } from './sync/guest';
+import { guestMode } from './store/mode';
 import { HistoryView } from './views/HistoryView';
 import { EntrySheet } from './views/EntrySheet';
 import { StatsView } from './views/StatsView';
@@ -80,6 +83,8 @@ function useTabScroll(selected: Tab) {
 
 function TopPanel() {
   const vp = viewport.value;
+  /** 연결이 끊긴 손님 사본: 제안도 보낼 수 없다 */
+  const cut = guestMode.value && guestLink.value?.state === 'disconnected';
   const { ref, edge, measure } = useTabScroll(tab.value);
   return (
     <header class="top">
@@ -116,19 +121,19 @@ function TopPanel() {
           ))}
         </nav>
         <div class="top-actions">
-          {vp !== 'mobile' ? (
+          {vp !== 'mobile' && !cut ? (
             <button type="button" class="btn primary add-btn" onClick={() => openAdd()}>
-              <Ui name="Plus" size={18} />
-              지출 입력
+              <Ui name={guestMode.value ? 'Send' : 'Plus'} size={18} />
+              {guestMode.value ? '제안 보내기' : '지출 입력'}
             </button>
           ) : null}
-          {vp !== 'mobile' && queue.value.length > 0 ? (
+          {vp !== 'mobile' && !guestMode.value && queue.value.length > 0 ? (
             <button type="button" class="btn queue-btn" onClick={openQueue}>
               <Ui name="ListChecks" size={18} />
               입력 대기({queue.value.length}건)
             </button>
           ) : null}
-          <AccountChip />
+          {guestMode.value ? <GuestChip /> : <AccountChip />}
         </div>
       </div>
     </header>
@@ -142,7 +147,7 @@ function useQueueNotice() {
     if (!isReady || queueNotified.value) return;
     queueNotified.value = true;
     const n = queue.value.length;
-    if (n > 0) showToast(`입력 대기 ${n}건이 있습니다`);
+    if (n > 0 && !guestMode.value) showToast(`입력 대기 ${n}건이 있습니다`);
   }, [isReady]);
 }
 
@@ -224,18 +229,19 @@ export function App() {
     <div class="app">
       <StaleBanner />
       <UpdateBanner />
+      {guestMode.value ? <GuestBanner /> : null}
       <TopPanel />
       <main class="page" id="main">
         <div class="page-inner">
           {t === 'history' ? <HistoryView /> : t === 'stats' ? <StatsView /> : t === 'assets' ? <AssetsView /> : <SettingsView />}
         </div>
       </main>
-      {vp === 'mobile' && (t === 'history' || t === 'stats') && !sheet.value ? (
-        <button type="button" class="fab" aria-label="지출 입력" onClick={() => openAdd()}>
-          <Ui name="Plus" size={26} />
+      {vp === 'mobile' && (t === 'history' || t === 'stats') && !sheet.value && !(guestMode.value && guestLink.value?.state === 'disconnected') ? (
+        <button type="button" class="fab" aria-label={guestMode.value ? '제안 보내기' : '지출 입력'} onClick={() => openAdd()}>
+          <Ui name={guestMode.value ? 'Send' : 'Plus'} size={26} />
         </button>
       ) : null}
-      {vp === 'mobile' && queue.value.length > 0 && !sheet.value && !assetSheet.value ? (
+      {vp === 'mobile' && !guestMode.value && queue.value.length > 0 && !sheet.value && !assetSheet.value ? (
         <button
           type="button"
           class={`fab queue-fab ${t === 'history' || t === 'stats' ? '' : 'no-fab'}`}

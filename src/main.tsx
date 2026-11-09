@@ -8,6 +8,8 @@ import './styles/app.css';
 import { App } from './app';
 import { initStore, ready, refreshToday } from './store/store';
 import { initSync } from './sync/controller';
+import { guestMode } from './store/mode';
+import { finishGuestExit, GUEST_DB, initGuest, shouldBootAsGuest } from './sync/guest';
 import { installKeyboardScroll } from './ui/keyboard';
 import { registerServiceWorker } from './pwa';
 
@@ -18,7 +20,14 @@ if (location.hash === '#share-lab') {
   installKeyboardScroll();
   registerServiceWorker();
   render(<App />, document.getElementById('app')!);
-  void initStore().then(() => (ready.value ? initSync() : undefined));
+  // 손님 모드(다른 사람의 가계부 사본 보기)는 내 가계부와 다른 저장소를 열고, 구글 동기화는 켜지 않는다
+  guestMode.value = shouldBootAsGuest();
+  void initStore(guestMode.value ? GUEST_DB : undefined).then(async () => {
+    if (!ready.value) return;
+    if (guestMode.value) return initGuest();
+    await finishGuestExit();
+    return initSync();
+  });
 }
 
 // 날짜가 바뀌거나 앱이 다시 보일 때 '오늘'을 갱신한다 (보류·예정 판정에 쓰임)

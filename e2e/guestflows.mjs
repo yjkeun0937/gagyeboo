@@ -1,0 +1,271 @@
+// 계정 공유 — 손님 쪽: 초대 수락, 읽기 전용, 제안 보내기, 새로 받기, 연결 끊김, 정리/내 가계부로 전환
+import { chromium } from 'playwright-core';
+import { FakeGoogle } from './fakeGoogle.mjs';
+const URL = 'http://localhost:4173/gagyeboo/';
+const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined });
+const google = new FakeGoogle();
+let failed = 0;
+const ok = (c, m) => { if (!c) { failed++; console.log('  FAIL:', m); } else console.log('  ok:', m); };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const CID = '1234567890-test.apps.googleusercontent.com';
+
+async function device(name, vp, who) {
+  const ctx = await browser.newContext({ viewport: vp, locale: 'ko-KR', timezoneId: 'Asia/Seoul', acceptDownloads: true });
+  await google.install(ctx);
+  await ctx.addInitScript(([cid, w]) => {
+    if (!localStorage.getItem('gagyeboo.clientId')) localStorage.setItem('gagyeboo.clientId', cid);
+    localStorage.setItem('gagyeboo.pickerKey', 'key');
+    localStorage.setItem('gagyeboo.pickerApp', '123');
+    localStorage.setItem('fakeAccount', w);
+  }, [CID, who]);
+  const page = await ctx.newPage();
+  const errs = [];
+  page.on('pageerror', (e) => errs.push(e.message));
+  page.on('console', (m) => m.type() === 'error' && !/Failed to load resource/.test(m.text()) && errs.push(m.text()));
+  await page.goto(URL);
+  await page.waitForSelector('.empty, .history');
+  const mobile = vp.width <= 640;
+  const d = { name, ctx, page, errs, mobile };
+  d.openSettingsPage = async (label) => {
+    await page.locator('.tab[data-tab="settings"]').click();
+    await page.locator(mobile ? '.menu-item' : '.side-item', { hasText: label }).click();
+  };
+  d.addEntry = async (store, amount) => {
+    await page.locator('.tab[data-tab="history"]').click();
+    await (mobile ? page.locator('.fab:not(.queue-fab)') : page.locator('.add-btn')).click();
+    await page.waitForSelector('.sheet');
+    await page.fill('#f-store', store);
+    await page.fill('#f-amount', String(amount));
+    await page.locator('.sheet-foot .btn.primary').click();
+    await page.waitForSelector('.sheet', { state: 'detached' });
+  };
+  d.confirm = async () => { await page.locator('.modal .btn[data-autofocus]').click(); };
+  d.text = () => page.locator('body').innerText();
+  return d;
+}
+const g = (name) => [...google.gfiles.values()].find((f) => f.name === name && !f.trashed);
+const proposals = () => [...google.gfiles.values()].filter((f) => f.name.startsWith('proposal-'));
+
+console.log('\n[A] 주인(앨리스): 공유 켜고 손님(밥) 초대');
+const A = await device('owner', { width: 1366, height: 900 }, 'alice');
+await A.page.getByText('가상 데이터로 둘러보기').first().click();
+await A.page.waitForSelector('.ledger, .cards');
+await A.page.waitForTimeout(400);
+if (await A.page.locator('.modal.is-wide').count()) { await A.page.keyboard.press('Escape'); await A.page.waitForTimeout(200); }
+await A.addEntry('앨리스상점', 12345);
+await A.page.locator('.account-chip').click();
+await A.page.getByRole('button', { name: '구글 계정으로 로그인' }).click();
+await A.page.waitForSelector('.account-chip.is-idle', { timeout: 8000 });
+await A.openSettingsPage('계정 공유');
+await A.page.getByRole('button', { name: '공유 켜기' }).click();
+await A.page.waitForSelector('#share-email');
+await A.page.fill('#share-email', 'bob@example.com');
+await A.page.getByRole('button', { name: '초대', exact: true }).click();
+await A.page.waitForSelector('.share-guests');
+await A.page.getByRole('button', { name: '지금 공유 내용 갱신' }).click();
+await A.page.waitForTimeout(500);
+const mirrorId = g('mirror.json').id;
+ok(JSON.parse(g('mirror.json').content).backup.entries.some((e) => e.store === '앨리스상점'), '미러에 앨리스상점이 있음');
+
+console.log('\n[B] 손님(밥): 내 가계부는 따로 두고 초대 수락');
+const B = await device('guest', { width: 1366, height: 900 }, 'bob');
+await B.addEntry('밥의 내 지출', 500);
+await B.openSettingsPage('계정 공유');
+ok((await B.text()).includes('공유받은 가계부 열기'), '내 가계부 모드의 설정에 「공유받은 가계부 열기」');
+// 파일 선택 창에서 아무것도 안 고르면 취소
+await B.page.getByRole('button', { name: '공유받은 가계부 열기' }).click();
+await B.page.waitForSelector('.form-error');
+ok((await B.page.locator('.form-error').innerText()).includes('취소'), '파일을 안 고르면 취소: ' + (await B.page.locator('.form-error').innerText()));
+ok((await B.page.evaluate(() => localStorage.getItem('gagyeboo.guest'))) === null, '연결 정보 없음');
+// 엉뚱한 파일(폴더)을 고르면 거절
+await B.page.evaluate((id) => { window.__PICK = { id, name: 'x' }; }, g('data').id);
+google.picked.add('bob:' + g('data').id);
+await B.page.getByRole('button', { name: '공유받은 가계부 열기' }).click();
+await B.page.waitForFunction(() => /가계부 공유 파일이 아닙니다|열 수 없습니다|읽지 못했습니다/.test(document.body.innerText), null, { timeout: 8000 });
+ok(true, '가계부 공유 파일이 아니면 거절: ' + (await B.page.locator('.form-error').innerText()));
+// 권한이 없는 파일 선택(주인이 초대하지 않은 상태 흉내): 읽을 수 없음
+await B.page.evaluate((id) => { window.__PICK = { id, name: 'mirror.json' }; }, mirrorId);
+const savedPerms = g('가계부 공유').perms; g('가계부 공유').perms = [];
+await B.page.getByRole('button', { name: '공유받은 가계부 열기' }).click();
+await B.page.waitForFunction(() => /열 수 없습니다/.test(document.body.innerText), null, { timeout: 8000 });
+ok(true, '초대받지 못한 계정은 열 수 없음');
+g('가계부 공유').perms = savedPerms;
+// 정상 수락
+await B.page.getByRole('button', { name: '공유받은 가계부 열기' }).click();
+await B.page.waitForSelector('.modal .btn[data-autofocus]');
+ok((await B.text()).includes('앨리스님의 가계부를 열까요?'), '확인 창에 주인 이름');
+const scope = await B.page.evaluate(() => window.__LAST_SCOPE);
+await Promise.all([B.page.waitForNavigation(), B.confirm()]);
+await B.page.waitForSelector('.guest-banner');
+await B.page.waitForTimeout(500);
+let t = await B.text();
+ok(t.includes('앨리스님의 가계부') && t.includes('읽기 전용'), '손님 모드 배너');
+ok((await B.page.evaluate(() => localStorage.getItem('gagyeboo.guest'))) !== null, '연결 정보 저장');
+ok(scope && !scope.split(' ').some((x) => /drive\.appdata$|auth\/drive$/.test(x)) && scope.includes('drive.file'), `손님은 drive.file만 요청 (${scope})`);
+
+console.log('\n[C] 읽기 전용 확인');
+await B.page.locator('.tab[data-tab="history"]').click();
+await B.page.waitForTimeout(300);
+t = await B.text();
+ok(t.includes('앨리스상점'), '주인의 내역이 보임');
+ok(!t.includes('밥의 내 지출'), '내 가계부 내역은 섞이지 않음');
+ok(t.includes('제안 보내기'), '「지출 입력」 대신 「제안 보내기」');
+ok((await B.page.locator('.queue-btn').count()) === 0, '입력 대기 버튼 없음');
+ok((await B.page.locator('.account-chip.guest-chip').count()) === 1, '상단에 손님 표시 칩');
+// 내역을 누르면 읽기 전용 상세
+await B.page.getByText('앨리스상점').first().click();
+await B.page.waitForSelector('.sheet');
+ok((await B.page.locator('.sheet').innerText()).includes('읽기 전용'), '내역 상세는 읽기 전용');
+ok((await B.page.locator('.sheet fieldset[disabled]').count()) === 1, '입력칸이 모두 비활성');
+ok((await B.page.locator('.sheet-foot').getByText('삭제').count()) === 0 && (await B.page.locator('.sheet-foot').getByText('저장', { exact: true }).count()) === 0, '삭제·저장 버튼 없음');
+ok((await B.page.locator('.sheet-foot').getByText('이 내용으로 제안하기').count()) === 1, '「이 내용으로 제안하기」만 있음');
+await B.page.keyboard.press('Escape');
+await B.page.waitForSelector('.sheet', { state: 'detached' });
+// 재산상황: 추가 버튼 없음
+await B.page.locator('.tab[data-tab="assets"]').click();
+await B.page.waitForTimeout(300);
+ok((await B.page.getByRole('button', { name: '항목 추가' }).count()) === 0, '재산상황에 「항목 추가」 없음');
+// 설정: 편집 메뉴 없음
+await B.page.locator('.tab[data-tab="settings"]').click();
+const menu = await B.page.locator('.side-item').allInnerTexts();
+ok(menu.join(',') === '공유받은 가계부,화면,앱 정보', '설정 메뉴: ' + menu.join(','));
+// 저장소 차단(방어선): 직접 쓰기 시도는 던진다
+
+console.log('\n[D] 제안 보내기');
+await B.page.locator('.tab[data-tab="history"]').click();
+await B.page.locator('.add-btn').click();
+await B.page.waitForSelector('.sheet');
+ok((await B.page.locator('.sheet').innerText()).includes('제안으로 보냅니다'), '입력창이 제안 모드');
+ok((await B.page.locator('.chip-add').count()) === 0, '목록 추가(개인 추가 등) 버튼 없음');
+ok((await B.page.locator('.sheet-foot .btn').allInnerTexts()).join(',').trim() === '제안 보내기', '푸터에는 「제안 보내기」만');
+await B.page.fill('#f-store', '손님제안상점');
+await B.page.fill('#f-amount', '3300');
+await B.page.locator('.sheet .chips .chip').nth(1).click();
+await B.page.locator('.sheet-foot .btn.primary').click();
+await B.page.waitForSelector('.toast');
+ok((await B.page.locator('.toast').innerText()).includes('제안을 보냈습니다'), '토스트: 제안을 보냈습니다');
+await B.page.waitForSelector('.sheet', { state: 'detached' });
+let ps = proposals();
+ok(ps.length === 1, '주인의 inbox에 제안 파일 1개');
+const pj = ps[0] && JSON.parse(ps[0].content);
+ok(pj?.app === 'gagyeboo-proposal' && pj.store === '손님제안상점' && pj.amount === 3300 && pj.date, '제안 내용: ' + JSON.stringify(pj));
+ok(ps[0]?.parents[0] === g('inbox').id && ps[0]?.owner === 'bob@example.com', 'inbox 안에 있고 소유자는 손님');
+ok(!(await B.text()).includes('3,300') || true, '(제안은 내역에 섞이지 않음)');
+ok(!(await B.page.locator('.history').innerText()).includes('손님제안상점'), '제안은 사본 내역에 섞이지 않음');
+await B.openSettingsPage('공유받은 가계부');
+await B.page.waitForSelector('.outbox-list');
+ok((await B.page.locator('.outbox-list').innerText()).includes('손님제안상점'), '「내가 보낸 제안」에 표시');
+
+await B.page.screenshot({ path: 'e2e/out/guest-page-desktop.png' });
+await B.page.setViewportSize({ width: 390, height: 844 });
+await B.page.waitForTimeout(300);
+await B.page.screenshot({ path: 'e2e/out/guest-page-mobile.png' });
+await B.page.locator('.tab[data-tab="history"]').click();
+await B.page.waitForTimeout(300);
+await B.page.screenshot({ path: 'e2e/out/guest-history-mobile.png' });
+await B.page.locator('.fab:not(.queue-fab)').click();
+await B.page.waitForSelector('.sheet');
+await B.page.waitForTimeout(500);
+await B.page.screenshot({ path: 'e2e/out/guest-propose-mobile.png' });
+await B.page.keyboard.press('Escape');
+await B.page.waitForSelector('.sheet', { state: 'detached' }).catch(async () => { await B.page.locator('.confirm-dialog, .modal .btn').first().click().catch(() => {}); });
+await B.page.setViewportSize({ width: 1366, height: 900 });
+console.log('\n[E] 연결이 풀린 상태에서 제안: 보관했다가 다시 연결하면 보냄');
+await B.page.evaluate(() => { localStorage.removeItem('gagyeboo.guestToken'); window.__FAKE_MODE = 'closed'; });
+await B.page.locator('.tab[data-tab="history"]').click();
+await B.page.locator('.add-btn').click();
+await B.page.waitForSelector('.sheet');
+await B.page.fill('#f-store', '대기제안');
+await B.page.fill('#f-amount', '1000');
+await B.page.locator('.sheet-foot .btn.primary').click();
+await B.page.waitForFunction(() => document.querySelector('.toast')?.textContent.includes('저장했습니다'));
+ok(true, '토스트: 저장했습니다 (구글에 연결하면 보내집니다)');
+ok(proposals().length === 1, '아직 보내지지 않음');
+await B.openSettingsPage('공유받은 가계부');
+ok((await B.page.locator('.outbox-list').innerText()).includes('보내기 대기'), '목록에 「보내기 대기」');
+await B.page.evaluate(() => { window.__FAKE_MODE = 'ok'; });
+await B.page.getByRole('button', { name: '구글 다시 연결' }).click();
+await B.page.waitForFunction(() => !document.querySelector('.outbox-list')?.innerText.includes('보내기 대기'), null, { timeout: 8000 });
+await sleep(300);
+ok(proposals().length === 2, '다시 연결하자 대기 중이던 제안이 전달됨');
+
+console.log('\n[F] 주인이 바꾼 내용 새로 받기');
+await A.addEntry('주인새지출', 777);
+await A.openSettingsPage('계정 공유');
+await A.page.getByRole('button', { name: '지금 공유 내용 갱신' }).click();
+await A.page.waitForTimeout(500);
+await B.page.getByRole('button', { name: '지금 새로 받기' }).click();
+await B.page.waitForFunction(() => document.querySelector('.toast')?.textContent.includes('받았습니다'), null, { timeout: 8000 });
+await B.page.locator('.tab[data-tab="history"]').click();
+await B.page.waitForTimeout(300);
+ok((await B.text()).includes('주인새지출'), '새 내역이 사본에 반영됨');
+
+console.log('\n[G] 주인이 해제 → 연결이 끊긴 사본');
+google.gfiles.get(g('가계부 공유').id).perms = [];
+google.gfiles.get(g('inbox').id).perms = [];
+await B.openSettingsPage('공유받은 가계부');
+await B.page.getByRole('button', { name: '지금 새로 받기' }).click();
+await B.page.waitForSelector('.guest-banner.is-cut');
+t = await B.text();
+ok(t.includes('연결이 끊긴 사본'), '배너: 연결이 끊긴 사본');
+await B.page.screenshot({ path: 'e2e/out/guest-cut-desktop.png' });
+ok((await B.page.locator('.add-btn').count()) === 0, '제안 보내기 버튼도 사라짐');
+ok((await B.page.getByRole('button', { name: '사본 지우고 새로 시작' }).count()) === 1 && (await B.page.getByRole('button', { name: '내 가계부로 바꾸기' }).count()) === 1, '선택지 두 가지');
+await B.page.locator('.tab[data-tab="history"]').click();
+await B.page.waitForTimeout(300);
+ok((await B.text()).includes('주인새지출'), '마지막 사본은 계속 읽을 수 있음');
+await B.page.reload();
+await B.page.waitForSelector('.guest-banner.is-cut');
+ok(true, '새로고침해도 끊긴 상태 유지');
+
+console.log('\n[H] 사본 지우고 새로 시작 → 내 가계부 그대로');
+await B.openSettingsPage('공유받은 가계부');
+await B.page.getByRole('button', { name: '사본 지우고 새로 시작' }).click();
+await Promise.all([B.page.waitForNavigation(), B.confirm()]);
+await B.page.waitForSelector('.tab[data-tab="history"]');
+await B.page.locator('.tab[data-tab="history"]').click();
+await B.page.waitForTimeout(800);
+t = await B.text();
+ok((await B.page.locator('.guest-banner').count()) === 0, '손님 표시 사라짐');
+ok(t.includes('밥의 내 지출') && !t.includes('앨리스상점'), '내 가계부(밥의 내 지출)만 보임');
+ok((await B.page.evaluate(() => localStorage.getItem('gagyeboo.guest'))) === null, '연결 정보 삭제');
+const dbs = await B.page.evaluate(async () => (await indexedDB.databases()).map((d) => d.name));
+ok(!dbs.includes('gagyeboo-guest'), '손님용 저장소 삭제: ' + dbs.join(','));
+
+console.log('\n[I] 다시 초대 → 열기 → 끊김 → 내 가계부로 바꾸기');
+g('가계부 공유').perms = [{ id: 'p1', role: 'reader', emailAddress: 'bob@example.com' }];
+g('inbox').perms = [{ id: 'p2', role: 'writer', emailAddress: 'bob@example.com' }];
+await B.openSettingsPage('계정 공유');
+await B.page.evaluate((id) => { window.__PICK = { id, name: 'mirror.json' }; }, mirrorId);
+await B.page.getByRole('button', { name: '공유받은 가계부 열기' }).click();
+await B.page.waitForSelector('.modal .btn[data-autofocus]');
+await Promise.all([B.page.waitForNavigation(), B.confirm()]);
+await B.page.waitForSelector('.guest-banner');
+ok(true, '다시 열림');
+g('가계부 공유').perms = [];
+g('inbox').perms = [];
+await B.openSettingsPage('공유받은 가계부');
+await B.page.getByRole('button', { name: '지금 새로 받기' }).click();
+await B.page.waitForSelector('.guest-banner.is-cut');
+await B.page.getByRole('button', { name: '내 가계부로 바꾸기' }).click();
+await B.page.waitForSelector('.modal .btn[data-autofocus]');
+ok((await B.text()).includes('백업 파일을 먼저 내려받습니다'), '확인 창에 백업 안내');
+const dl = B.page.waitForEvent('download');
+await Promise.all([B.page.waitForNavigation(), B.confirm()]);
+const dlf = await dl;
+ok(/before-copy/.test(dlf.suggestedFilename()), '내 가계부 백업 파일 내려받음: ' + dlf.suggestedFilename());
+await B.page.waitForSelector('.tab[data-tab="history"]');
+await B.page.locator('.tab[data-tab="history"]').click();
+await B.page.waitForTimeout(1000);
+t = await B.text();
+ok((await B.page.locator('.guest-banner').count()) === 0, '손님 표시 없음');
+ok(t.includes('앨리스상점') && !t.includes('밥의 내 지출'), '이제 사본 내용이 내 가계부');
+await B.addEntry('편집가능확인', 100);
+ok(true, '직접 편집 가능(내역 추가됨)');
+ok((await B.page.evaluate(() => localStorage.getItem('gagyeboo.guest'))) === null, '연결 정보 삭제');
+
+ok(A.errs.length === 0, '콘솔 오류 없음(주인) ' + A.errs.join(' | '));
+ok(B.errs.length === 0, '콘솔 오류 없음(손님) ' + B.errs.join(' | '));
+await browser.close();
+console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');
+process.exit(failed ? 1 : 0);

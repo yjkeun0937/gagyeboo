@@ -19,6 +19,7 @@ import { assetLogs, assets, assetsUpdatedAt, showToast, setAssetState, today, un
 import { LineChart, type Tip } from '../ui/charts';
 import { Ui } from '../ui/icons';
 import { openAssetAdd, openAssetCopy, openAssetEdit } from '../ui/nav';
+import { guestMode } from '../store/mode';
 import { Empty, Split } from '../ui/parts';
 import { viewport } from '../ui/viewport';
 
@@ -62,6 +63,7 @@ function MaturityBadge({ a }: { a: Asset }) {
 
 /** 만기가 지난 보유 항목의 단축 버튼 */
 function OverActions({ a }: { a: Asset }) {
+  if (guestMode.value) return null;
   if (maturityInfo(a, today.value)?.level !== 'over') return null;
   return (
     <span class="asset-quick">
@@ -279,10 +281,12 @@ export function AssetsView() {
        <>
       <div class="assets-head">
         <h2>재산상황</h2>
-        <button type="button" class="btn primary" onClick={() => openAssetAdd()}>
-          <Ui name="Plus" size={18} />
-          항목 추가
-        </button>
+        {guestMode.value ? null : (
+          <button type="button" class="btn primary" onClick={() => openAssetAdd()}>
+            <Ui name="Plus" size={18} />
+            항목 추가
+          </button>
+        )}
       </div>
 
       <div class="tiles">
@@ -317,9 +321,11 @@ export function AssetsView() {
       {all.length === 0 ? (
         <Empty title="아직 등록한 재산 항목이 없습니다">
           <p>예금·보험·부동산 같은 재산을 등록하면 총계와 변경 이력을 볼 수 있습니다.</p>
-          <button type="button" class="btn primary" onClick={() => openAssetAdd()}>
-            첫 항목 추가
-          </button>
+          {guestMode.value ? null : (
+            <button type="button" class="btn primary" onClick={() => openAssetAdd()}>
+              첫 항목 추가
+            </button>
+          )}
         </Empty>
       ) : (
         groups.map((g) => <Group key={g.state} g={g} mobile={mobile} />)

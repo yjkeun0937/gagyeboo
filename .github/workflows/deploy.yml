@@ -29,6 +29,9 @@ jobs:
         env:
           # 구글 로그인용 OAuth 클라이언트 ID (공개되어도 되는 값). 저장소 Settings → Secrets and variables → Actions → Variables
           VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          # 손님이 공유 파일을 고르는 구글 Picker용 값 (공개되어도 되는 값, 선택 사항)
+          VITE_GOOGLE_API_KEY: ${{ vars.GOOGLE_API_KEY }}
+          VITE_GOOGLE_APP_ID: ${{ vars.GOOGLE_APP_ID }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -7,6 +7,7 @@ export class FakeGoogle {
   offline = false; // true면 구글에 닿지 못함(네트워크 오류)
   log = [];
   gfiles = new Map(); // 공유용 파일·폴더(앱 전용 폴더 밖): id -> {id,name,mimeType,parents,owner,content,perms,trashed}
+  picked = new Set(); // 'who:fileId' — 손님이 파일 선택 창으로 고른 파일
   fullScope = true; // false면 드라이브 전체 범위가 허용되지 않은 것처럼 동작
   accounts = {
     alice: { sub: 'sub-alice', name: '앨리스', email: 'alice@example.com' },
@@ -30,7 +31,7 @@ export class FakeGoogle {
       route.fulfill({
         contentType: 'text/javascript',
         body: `
-          window.google = { accounts: { oauth2: {
+          window.google = window.google || {}; window.google.accounts = { oauth2: {
             initTokenClient(cfg) {
               return { requestAccessToken(o) {
                 const mode = window.__FAKE_MODE || 'ok';
@@ -46,7 +47,33 @@ export class FakeGoogle {
               } };
             },
             revoke(t, done) { window.__REVOKED = t; done && done(); }
-          } } };`,
+          } };`,
+      }),
+    );
+    await context.route('https://apis.google.com/js/api.js', (route) =>
+      route.fulfill({
+        contentType: 'text/javascript',
+        body: `
+          window.gapi = { load(n, cb) { cb(); } };
+          window.google = window.google || {};
+          window.google.picker = {
+            ViewId: { DOCS: 'docs' }, Action: { PICKED: 'picked', CANCEL: 'cancel' },
+            DocsView: function () { this.setIncludeFolders = () => this; this.setOwnedByMe = () => this; },
+            PickerBuilder: function () {
+              let cb; let tok = '';
+              this.addView = () => this; this.setDeveloperKey = () => this; this.setAppId = () => this;
+              this.setOAuthToken = (t) => { tok = t; return this; };
+              this.setCallback = (f) => { cb = f; return this; };
+              this.build = () => ({ setVisible() {
+                setTimeout(async () => {
+                  const p = window.__PICK;
+                  if (!p) return cb({ action: 'cancel' });
+                  await fetch('https://www.googleapis.com/__fake/pick?id=' + encodeURIComponent(p.id), { headers: { authorization: 'Bearer ' + tok } });
+                  cb({ action: 'picked', docs: [{ id: p.id, name: p.name }] });
+                }, 10);
+              } });
+            },
+          };`,
       }),
     );
     const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' };
@@ -64,6 +91,10 @@ export class FakeGoogle {
       if (!acct || this.expired) return json(401, { error: { code: 401, message: 'Invalid Credentials' } });
       this.log.push(`${req.method()} ${url.pathname}${url.search ? '?' + url.searchParams.get('uploadType') || url.searchParams.get('alt') || '' : ''}`);
       if (url.pathname === '/oauth2/v3/userinfo') return json(200, { sub: acct.sub, name: acct.name, email: acct.email });
+      if (url.pathname === '/__fake/pick') {
+        this.picked.add(who + ':' + url.searchParams.get('id'));
+        return json(200, {});
+      }
       const d = this.drive(acct.sub);
       // ── 공유용(앱 전용 폴더 밖) 파일·폴더·권한: 드라이브 전체 범위가 있어야 한다
       const sm = url.pathname.match(/\/(?:upload\/)?drive\/v3\/files(?:\/([^/]+))?(?:\/permissions(?:\/([^/]+))?)?$/);
@@ -77,8 +108,37 @@ export class FakeGoogle {
         (req.method() === 'POST' && !sid && !url.pathname.startsWith('/upload/')) ||
         (isUploadCreate && !/appDataFolder/.test(body0));
       if (sharedCall) {
-        if (!full) return json(403, { error: { code: 403, message: 'insufficient scope', errors: [{ reason: 'insufficientPermissions' }] } });
-        const gf = (x) => ({ id: x.id, name: x.name, mimeType: x.mimeType, trashed: x.trashed });
+        const notFound = () => json(404, { error: { code: 404, message: 'File not found', errors: [{ reason: 'notFound' }] } });
+        const roleOn = (f, email) => {
+          for (let x = f; x; x = this.gfiles.get(x.parents?.[0])) {
+            if (x.owner === email) return 'owner';
+            const p = x.perms.find((q) => q.emailAddress === email);
+            if (p) return p.role;
+          }
+          return null;
+        };
+        if (!full) {
+          // drive.file 범위: 내가 만들었거나 파일 선택 창으로 고른 파일만 다룰 수 있다
+          const insufficient = () => json(403, { error: { code: 403, message: 'insufficient scope', errors: [{ reason: 'insufficientPermissions' }] } });
+          if (isPerm) return insufficient();
+          if (isUploadCreate) {
+            const bd = (req.headers()['content-type'] || '').match(/boundary=(.+)$/)[1];
+            const m0 = JSON.parse(body0.split('--' + bd).filter((q) => q.trim() && q.trim() !== '--')[0].split('\r\n\r\n')[1].trim());
+            const parent = this.gfiles.get(m0.parents?.[0]);
+            const role = parent ? roleOn(parent, acct.email) : null;
+            if (role !== 'owner' && role !== 'writer') return notFound();
+          } else if (req.method() === 'POST' && !sid) {
+            return insufficient();
+          } else {
+            const f0 = this.gfiles.get(sid);
+            const role = f0 ? roleOn(f0, acct.email) : null;
+            const mine = f0 && (f0.owner === acct.email || this.picked.has(who + ':' + sid));
+            if (!f0 || !role || !mine) return notFound();
+            if (!['GET', 'DELETE'].includes(req.method())) return insufficient();
+            if (req.method() === 'DELETE' && f0.owner !== acct.email) return insufficient();
+          }
+        }
+        const gf = (x) => ({ id: x.id, name: x.name, mimeType: x.mimeType, trashed: x.trashed, modifiedTime: new Date(1.7e12 + (x.writes || 0) * 1000).toISOString() });
         if (isPerm) {
           const f = this.gfiles.get(sid);
           if (!f) return json(404, { error: { message: 'File not found: ' + sid } });
@@ -113,6 +173,10 @@ export class FakeGoogle {
         }
         const f = this.gfiles.get(sid);
         if (!f) return json(404, { error: { message: 'File not found: ' + sid } });
+        if (req.method() === 'DELETE') {
+          this.gfiles.delete(sid);
+          return route.fulfill({ status: 204, headers: cors });
+        }
         if (req.method() === 'PATCH' && url.pathname.startsWith('/upload/')) {
           f.content = body0;
           f.writes = (f.writes || 0) + 1;

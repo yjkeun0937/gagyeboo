@@ -13,6 +13,7 @@ import {
   formatValue,
 } from '../lib/assets';
 import { isValidYmd } from '../lib/dates';
+import { guestMode } from '../store/mode';
 import { digitsOnly, won } from '../lib/format';
 import type { Asset, AssetCategory, AssetLog, AssetState, AssetTax, EndReason, ID } from '../lib/types';
 import {
@@ -274,7 +275,7 @@ export function AssetSheet() {
     closeAssetSheet();
   };
 
-  const title = mode === 'edit' ? `${STATE_LABEL[editing!.state]} 항목` : mode === 'copy' ? '복사해서 새로 등록' : '재산 항목 추가';
+  const title = guestMode.value && editing ? `${STATE_LABEL[editing.state]} 항목 (읽기 전용)` : mode === 'edit' ? `${STATE_LABEL[editing!.state]} 항목` : mode === 'copy' ? '복사해서 새로 등록' : '재산 항목 추가';
   const owners = [...personsSorted.value, ...groupsSorted.value].filter((u) => !u.hidden || u.id === form.owner);
 
   return (
@@ -282,6 +283,7 @@ export function AssetSheet() {
       title={title}
       onRequestClose={requestClose}
       footer={
+        guestMode.value ? undefined : (
         <>
           {editing ? (
             <>
@@ -296,6 +298,7 @@ export function AssetSheet() {
             저장
           </button>
         </>
+        )
       }
     >
       <form
@@ -305,6 +308,7 @@ export function AssetSheet() {
           submit();
         }}
       >
+        <fieldset class="ro-fieldset" disabled={guestMode.value}>
         <div class="field">
           <span class="label">분류</span>
           <div class="chips">
@@ -570,6 +574,7 @@ export function AssetSheet() {
             </details>
           </>
         ) : null}
+        </fieldset>
       </form>
     </Sheet>
   );

@@ -11,6 +11,9 @@ const LS_CLIENT_ID = 'gagyeboo.clientId';
 const LS_TOKEN = 'gagyeboo.token';
 const LS_ACCOUNT = 'gagyeboo.account';
 const LS_SHARE = 'gagyeboo.share';
+const LS_GUEST_TOKEN = 'gagyeboo.guestToken';
+/** 손님: 내가 고른(Picker) 파일과 내가 만든 파일만 다룰 수 있는 좁은 범위 */
+export const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
 export interface Account {
   sub: string;
@@ -93,6 +96,7 @@ export function setClientId(id: string) {
   if (id.trim()) ls.set(LS_CLIENT_ID, id.trim());
   else ls.del(LS_CLIENT_ID);
   tokenClient = null;
+  guestClient = null;
 }
 export function builtInClientId(): boolean {
   return !!(import.meta.env.VITE_GOOGLE_CLIENT_ID ?? '').trim();
@@ -182,13 +186,24 @@ export function preloadGis() {
 let tokenClient: TokenClient | null = null;
 let pending: { resolve: (r: TokenResponse) => void; reject: (e: AuthFlowError) => void } | null = null;
 
+let guestClient: TokenClient | null = null;
+
 async function ensureClient(): Promise<TokenClient> {
+  tokenClient ??= await buildClient(scopes());
+  return tokenClient;
+}
+async function ensureGuestClient(): Promise<TokenClient> {
+  guestClient ??= await buildClient(`openid email profile ${DRIVE_FILE_SCOPE}`);
+  return guestClient;
+}
+
+async function buildClient(scope: string): Promise<TokenClient> {
   await loadGis();
   const cid = getClientId();
   if (!cid) throw new AuthFlowError('failed', '구글 클라이언트 ID가 설정되지 않았습니다');
-  tokenClient ??= window.google!.accounts.oauth2.initTokenClient({
+  return window.google!.accounts.oauth2.initTokenClient({
     client_id: cid,
-    scope: scopes(),
+    scope,
     // 예전에 허용한 넓은 범위가 공유를 쓰지 않는 로그인에 합쳐지지 않게 한다
     include_granted_scopes: false,
     callback: (r) => {
@@ -211,7 +226,6 @@ async function ensureClient(): Promise<TokenClient> {
       );
     },
   });
-  return tokenClient;
 }
 
 /** 사용자가 누른 직후에 호출해야 팝업이 막히지 않는다. 드라이브 권한까지 허용했는지도 확인한다 */
@@ -230,6 +244,32 @@ export async function requestToken(opts: { prompt?: '' | 'select_account' | 'con
   }
   storeToken(res.access_token!, Number(res.expires_in ?? 3600), res.scope ?? '');
   return res.access_token!;
+}
+
+/** 손님 로그인: 드라이브 파일 범위(drive.file)만 요청한다. 내 가계부의 앱 전용 폴더 권한은 요청하지 않는다 */
+export async function requestGuestToken(opts: { prompt?: '' | 'select_account' | 'consent'; hint?: string } = {}): Promise<string> {
+  const client = await ensureGuestClient();
+  const res = await new Promise<TokenResponse>((resolve, reject) => {
+    pending = { resolve, reject };
+    client.requestAccessToken({ prompt: opts.prompt ?? '', ...(opts.hint ? { hint: opts.hint } : {}) });
+  });
+  if (res.scope && !res.scope.split(' ').includes(DRIVE_FILE_SCOPE)) {
+    throw new AuthFlowError('scope', '드라이브 파일 권한을 허용해야 공유받은 가계부를 열 수 있습니다. 다시 로그인하면서 모든 항목을 체크해 주세요');
+  }
+  ls.set(LS_GUEST_TOKEN, JSON.stringify({ token: res.access_token, exp: Date.now() + Number(res.expires_in ?? 3600) * 1000 }));
+  return res.access_token!;
+}
+export function cachedGuestToken(): string | null {
+  try {
+    const t = JSON.parse(ls.get(LS_GUEST_TOKEN) ?? 'null');
+    if (t && typeof t.token === 'string' && t.exp - 60_000 > Date.now()) return t.token;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+export function forgetGuestToken() {
+  ls.del(LS_GUEST_TOKEN);
 }
 
 export async function fetchUserInfo(token: string): Promise<Account> {

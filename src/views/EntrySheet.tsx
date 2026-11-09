@@ -29,6 +29,8 @@ import {
 import { uid } from '../lib/format';
 import { CategoryDot, COLOR_CHOICES, PayGlyph, Ui, UserGlyph } from '../ui/icons';
 import { closeSheet, openCopy, openFixedFromEntry, sheet } from '../ui/nav';
+import { guestMode } from '../store/mode';
+import { guestLink, sendProposal } from '../sync/guest';
 import { DateField } from '../ui/DateField';
 import { askConfirm, Sheet, showWarning } from '../ui/overlay';
 
@@ -115,7 +117,7 @@ export function Chip({
 }
 
 /** 사용자 선택: 개인 줄 / 그룹 줄, 그리고 바로 개인 추가 */
-export function UserPicker({ value, onChange }: { value: ID | null; onChange: (v: ID | null) => void }) {
+export function UserPicker({ value, onChange, canAdd = true }: { value: ID | null; onChange: (v: ID | null) => void; canAdd?: boolean }) {
   const persons = personsSorted.value;
   const groups = groupsSorted.value.filter((g) => !g.hidden);
   const [adding, setAdding] = useState(false);
@@ -159,7 +161,7 @@ export function UserPicker({ value, onChange }: { value: ID | null; onChange: (v
               {u.name}
             </Chip>
           ))}
-        {!adding ? (
+        {!adding && canAdd ? (
           <button type="button" class="chip chip-add" onClick={() => setAdding(true)}>
             <Ui name="Plus" size={14} />
             개인 추가
@@ -228,10 +230,12 @@ export function PayDetailPicker({
   methodId,
   value,
   onChange,
+  canAdd = true,
 }: {
   methodId: ID | null;
   value: ID | null;
   onChange: (v: ID | null) => void;
+  canAdd?: boolean;
 }) {
   const method = payMethodsSorted.value.find((m) => m.id === methodId) ?? null;
   const list = payDetailsSorted.value.filter(
@@ -277,7 +281,7 @@ export function PayDetailPicker({
             {d.name}
           </Chip>
         ))}
-        {!adding ? (
+        {!adding && canAdd ? (
           <button type="button" class="chip chip-add" onClick={() => setAdding(true)}>
             <Ui name="Plus" size={14} />
             {method.name} 상세 추가
@@ -352,6 +356,10 @@ export function EntrySheet() {
   const initialJson = useRef(JSON.stringify(init.form));
   const mode = s.mode;
   const editing = init.entry;
+  /** 손님: 내역은 읽기만, 새 입력은 주인에게 보내는 '제안' */
+  const guest = guestMode.value;
+  const viewing = guest && !!editing;
+  const proposing = guest && !editing;
 
   const set = (patch: Partial<Form>) => setForm((f) => ({ ...f, ...patch }));
   const dirty = JSON.stringify(form) !== initialJson.current;
@@ -440,6 +448,27 @@ export function EntrySheet() {
     if (!(amountNum > 0)) return setError('금액을 입력해 주세요');
     setError('');
 
+    if (proposing) {
+      setBusy(true);
+      try {
+        const r = await sendProposal({
+          date: form.date,
+          store: form.store.trim(),
+          memo: form.memo.trim(),
+          category: form.category,
+          amount: amountNum,
+          user: form.user,
+          payMethod: form.payMethod,
+          payDetail: form.payMethod ? form.payDetail : null,
+        });
+        showToast(r.sent ? '제안을 보냈습니다' : '제안을 저장했습니다. 구글에 연결하면 주인에게 보내집니다');
+        closeSheet();
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     if (form.date > today.value && (!editing || editing.date !== form.date)) {
       const ok = await askConfirm({
         title: '오늘 이후 날짜입니다',
@@ -501,7 +530,7 @@ export function EntrySheet() {
     closeSheet();
   };
 
-  const title = mode === 'edit' ? '내역 수정' : mode === 'copy' ? '복사해서 새로 입력' : '지출 입력';
+  const title = viewing ? '내역 보기 (읽기 전용)' : proposing ? '지출 제안 보내기' : mode === 'edit' ? '내역 수정' : mode === 'copy' ? '복사해서 새로 입력' : '지출 입력';
   const exists = entries.value.length > 0;
 
   return (
@@ -509,6 +538,22 @@ export function EntrySheet() {
       title={title}
       onRequestClose={requestClose}
       footer={
+        viewing ? (
+          <>
+            <span class="grow" />
+            {guestLink.value?.state === 'active' ? (
+              <button type="button" class="btn primary" onClick={() => editing && openCopy(editing)}>
+                <Ui name="Copy" size={16} />
+                이 내용으로 제안하기
+              </button>
+            ) : null}
+          </>
+        ) : proposing ? (
+          <button type="button" class="btn primary" disabled={busy} onClick={() => submit(false)}>
+            <Ui name="Send" size={16} />
+            제안 보내기
+          </button>
+        ) : (
         <>
           {editing ? (
             <>
@@ -561,6 +606,7 @@ export function EntrySheet() {
             저장
           </button>
         </>
+        )
       }
     >
       <form
@@ -570,6 +616,12 @@ export function EntrySheet() {
           submit(false);
         }}
       >
+        <fieldset class="ro-fieldset" disabled={viewing}>
+        {proposing ? (
+          <p class="hint propose-hint">
+            {guestLink.value?.ownerName ?? '주인'}님의 가계부에 <b>제안</b>으로 보냅니다. 주인이 확인한 뒤 가계부에 넣습니다.
+          </p>
+        ) : null}
         <div class="field">
           <label for="f-date">날짜</label>
           <DateField id="f-date" value={form.date} onChange={(v) => set({ date: v })} />
@@ -705,7 +757,7 @@ export function EntrySheet() {
 
         <div class="field">
           <span class="label">사용자</span>
-          <UserPicker value={form.user} onChange={(v) => set({ user: v })} />
+          <UserPicker value={form.user} onChange={(v) => set({ user: v })} canAdd={!guest} />
         </div>
 
         <div class="field">
@@ -743,6 +795,7 @@ export function EntrySheet() {
             methodId={form.payMethod}
             value={form.payDetail}
             onChange={(v) => set({ payDetail: v })}
+            canAdd={!guest}
           />
         </div>
 
@@ -754,6 +807,7 @@ export function EntrySheet() {
             {error}
           </p>
         ) : null}
+        </fieldset>
         {/* Enter로 저장되게 하는 숨은 제출 버튼 */}
         <button type="submit" class="visually-hidden" tabIndex={-1}>
           저장
