@@ -167,6 +167,8 @@ export interface Proposal extends Base {
   payMethod: ID | null;
   payDetail: ID | null;
   isEstimate?: boolean;
+  /** 손님 앱이 제안 파일 안에 적어 둔 제안 ID (같은 제안이 두 파일로 올라왔을 때 걸러내는 데 쓴다) */
+  srcId?: string;
 }
 
 export interface EntryFilter {

@@ -461,6 +461,10 @@ export async function applyQueue(decisions: QueueDecision[]): Promise<QueueUndo>
           );
           undo.entered.push({ id, fixed: false });
         }
+      } else {
+        // 입력하지 않음: 다른 기기에서 같은 제안 파일을 다시 받지 않도록 동기화되는 기록을 남긴다 (입력한 경우는 내역 pr_ID가 그 역할을 한다)
+        const skip = await save('fixedSkips', { id: `pr_${p.id}`, updatedAt: 0, itemId: '', ym: '' });
+        undo.skips.push(skip);
       }
       await save('proposals', { ...p, deleted: true });
       undo.proposals.push(p);

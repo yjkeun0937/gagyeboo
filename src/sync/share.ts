@@ -8,10 +8,11 @@
  */
 import { signal } from '@preact/signals';
 import { db } from '../store/db';
-import { exportAll, showToast } from '../store/store';
+import { categories, exportAll, payDetails, payMethods, save as saveRow, showToast, users } from '../store/store';
+import { MAX_PENDING, MAX_PROPOSAL_BYTES, parseProposalFile } from '../lib/proposals';
 import type { BackupFile } from '../store/store';
 import { cachedShareToken, cachedToken, fetchUserInfo, forgetToken, loadAccount, requestToken, setShareScopeWanted, AuthFlowError } from './auth';
-import { createFolder, createJson, getFile, listPermissions, removePermission, share, trash, updateText, type LabCall } from './driveapi';
+import { call, createFolder, createJson, getFile, listPermissions, readText, removePermission, share, trash, updateText, type LabCall } from './driveapi';
 import { GoogleDriveClient } from './drive';
 
 export const MAX_GUESTS = 5;
@@ -48,6 +49,12 @@ export const shareBusy = signal(false);
 export const shareStale = signal(false);
 export const sharePublishedAt = signal<number | null>(null);
 export const shareError = signal<string | null>(null);
+/** 손님 제안 확인 상태 */
+export const proposalCheckedAt = signal<number | null>(null);
+export const proposalBusy = signal(false);
+export const proposalError = signal<string | null>(null);
+/** 읽을 수 없어 건너뛴 제안 파일 수 (형식이 틀리거나 손님이 아닌 계정이 올린 것) */
+export const proposalIgnored = signal(0);
 
 export type ShareResult = { ok: true } | { ok: false; error: string; reconnect?: boolean };
 const fail = (error: string, reconnect = false): ShareResult => ({ ok: false, error, reconnect });
@@ -420,4 +427,168 @@ export async function folderExists(): Promise<boolean | null> {
   const r = await getFile(t, cfg.folderId);
   if (r.status === 404) return false;
   return r.ok ? !(r.data as { trashed?: boolean })?.trashed : null;
+}
+
+/* ───────── 손님 제안 받기 ───────── */
+
+const INBOX_NAME = /^proposal-[A-Za-z0-9_-]{8,64}\.json$/;
+const MAX_PER_RUN = 50;
+const MAX_REJECTED = 500;
+
+interface InboxFile {
+  id: string;
+  name: string;
+  trashed?: boolean;
+  size?: string;
+  createdTime?: string;
+  owners?: { emailAddress?: string; displayName?: string }[];
+}
+
+async function listInbox(token: string, inboxId: string): Promise<{ files: InboxFile[] } | LabCall> {
+  const files: InboxFile[] = [];
+  let page = '';
+  for (let i = 0; i < 20; i++) {
+    const r = await call(
+      token,
+      'https://www.googleapis.com/drive/v3/files?' +
+        new URLSearchParams({
+          q: `'${inboxId}' in parents and trashed = false`,
+          fields: 'nextPageToken,files(id,name,trashed,size,createdTime,owners(emailAddress,displayName))',
+          pageSize: '100',
+          ...(page ? { pageToken: page } : {}),
+        }),
+    );
+    if (!r.ok) return r;
+    const d = r.data as { files?: InboxFile[]; nextPageToken?: string } | null;
+    files.push(...(d?.files ?? []));
+    if (!d?.nextPageToken) break;
+    page = d.nextPageToken;
+  }
+  return { files };
+}
+
+/** 이 기기에서(또는 다른 기기에서 동기화된 기록으로) 이미 받았거나 처리한 제안 파일인가 */
+async function alreadyHandled(fileId: string): Promise<boolean> {
+  const d = db();
+  if (await d.proposals.get(fileId)) return true;
+  if (await d.entries.get(`pr_${fileId}`)) return true;
+  const skip = await d.fixedSkips.get(`pr_${fileId}`);
+  return !!skip && !skip.deleted;
+}
+
+type ImportResult = { ok: true; added: number } | { ok: false; error: string; reconnect?: boolean };
+const bad = (error: string, reconnect = false): ImportResult => ({ ok: false, error, reconnect });
+let importing = false;
+
+/**
+ * 손님이 inbox에 올린 제안 파일을 읽어 입력 대기에 넣는다.
+ * - 제안자는 파일의 드라이브 소유자(구글이 정한 값)로 정하고, 현재 초대한 손님이 아닌 계정이 올린 파일은 무시한다.
+ * - 내용은 검사하고 주인의 목록에 없는 항목은 비운다. 파일은 손님 것이라 주인이 지울 수 없으므로 처리한 기록은 이 기기·동기화 데이터에 남긴다.
+ * 공유 권한 토큰이 없으면 아무것도 하지 않고 '다시 연결 필요'를 돌려준다.
+ */
+export async function importProposals(): Promise<ImportResult> {
+  const cfg = shareConfig.value;
+  if (!cfg) return bad('공유가 켜져 있지 않습니다');
+  if (cfg.guests.length === 0) return { ok: true, added: 0 };
+  if (importing) return { ok: true, added: 0 };
+  const token = cachedShareToken();
+  if (!token) return bad(NEED_RECONNECT, true);
+  importing = true;
+  proposalBusy.value = true;
+  try {
+    const l = await listInbox(token, cfg.inboxId);
+    if (!('files' in l)) {
+      if (l.status === 401) {
+        forgetToken();
+        return bad(NEED_RECONNECT, true);
+      }
+      const e = explain(l, '손님 제안 확인');
+      proposalError.value = e;
+      return bad(e);
+    }
+    const guests = new Set(cfg.guests.map((g) => g.email.toLowerCase()));
+    const rejRow = (await db().meta.get('shareRejected'))?.value;
+    const rejected = new Set<string>(Array.isArray(rejRow) ? (rejRow as string[]) : []);
+    const seenSrc = new Set((await db().proposals.toArray()).map((p) => p.srcId).filter(Boolean) as string[]);
+    let pending = (await db().proposals.toArray()).filter((p) => !p.deleted).length;
+    let added = 0;
+    let ignored = 0;
+    let changedRejected = false;
+    const reject = (id: string) => {
+      rejected.add(id);
+      changedRejected = true;
+      ignored++;
+    };
+    for (const f of l.files) {
+      if (added >= MAX_PER_RUN || pending >= MAX_PENDING) break;
+      if (f.trashed || rejected.has(f.id)) {
+        if (rejected.has(f.id)) ignored++;
+        continue;
+      }
+      if (await alreadyHandled(f.id)) continue;
+      const owner = f.owners?.[0];
+      const email = (owner?.emailAddress ?? '').toLowerCase();
+      if (!INBOX_NAME.test(f.name) || !guests.has(email) || Number(f.size ?? 0) > MAX_PROPOSAL_BYTES) {
+        // 손님이 아닌 계정이 올렸거나 이름·크기가 이상한 파일. 손님이 아닌 경우는 나중에 초대될 수도 있으니 기록하지 않는다
+        if (guests.has(email) || !email) reject(f.id);
+        else ignored++;
+        continue;
+      }
+      const r = await readText(token, f.id);
+      if (r.status === 401) {
+        forgetToken();
+        return bad(NEED_RECONNECT, true);
+      }
+      if (!r.ok) continue;
+      const parsed = parseProposalFile(r.data, { categories: categories.value, users: users.value, payMethods: payMethods.value, payDetails: payDetails.value });
+      if (!parsed.ok) {
+        reject(f.id);
+        continue;
+      }
+      const src = parsed.value.srcId;
+      if (src && seenSrc.has(src)) {
+        reject(f.id);
+        continue;
+      }
+      if (src) seenSrc.add(src);
+      await saveRow('proposals', {
+        ...parsed.value,
+        id: f.id,
+        updatedAt: 0,
+        from: owner?.displayName || owner?.emailAddress || '손님',
+        receivedAt: f.createdTime ? Date.parse(f.createdTime) || Date.now() : Date.now(),
+      });
+      added++;
+      pending++;
+    }
+    if (changedRejected) await db().meta.put({ key: 'shareRejected', value: [...rejected].slice(-MAX_REJECTED) });
+    proposalIgnored.value = ignored;
+    proposalCheckedAt.value = Date.now();
+    proposalError.value = null;
+    if (added > 0) showToast(`손님 제안 ${added}건이 입력 대기에 들어왔습니다`);
+    return { ok: true, added };
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    proposalError.value = m;
+    return bad(m);
+  } finally {
+    importing = false;
+    proposalBusy.value = false;
+  }
+}
+
+let watching = false;
+/** 앱을 열었을 때·다시 볼 때·5분마다(보이는 동안) 손님 제안을 확인한다. 공유 권한이 없으면 조용히 건너뛴다 */
+export function startProposalWatcher() {
+  if (watching) return;
+  watching = true;
+  const tick = () => {
+    if (document.hidden || !shareConfig.value || !cachedShareToken()) return;
+    void importProposals();
+  };
+  setTimeout(tick, 4000);
+  setInterval(tick, 5 * 60_000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) setTimeout(tick, 500);
+  });
 }

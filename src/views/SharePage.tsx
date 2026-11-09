@@ -4,6 +4,11 @@ import { account, reconnect, signingIn } from '../sync/controller';
 import {
   disableSharing,
   enableSharing,
+  importProposals,
+  proposalBusy,
+  proposalCheckedAt,
+  proposalError,
+  proposalIgnored,
   inviteGuest,
   MAX_GUESTS,
   publishMirror,
@@ -15,9 +20,9 @@ import {
   shareStale,
   type ShareResult,
 } from '../sync/share';
-import { showToast } from '../store/store';
+import { proposals, showToast } from '../store/store';
 import { Ui } from '../ui/icons';
-import { accountModal } from '../ui/nav';
+import { accountModal, openQueue } from '../ui/nav';
 import { askConfirm } from '../ui/overlay';
 
 function when(t: number | null): string {
@@ -97,7 +102,6 @@ export function SharePage() {
           <Ui name="Users" size={18} />
           {busy ? '준비 중…' : '공유 켜기'}
         </button>
-        <p class="hint">손님이 받아 보는 화면은 다음 업데이트에서 열립니다. 지금은 초대와 공유 준비까지 할 수 있습니다.</p>
       </div>
     );
   }
@@ -129,7 +133,10 @@ export function SharePage() {
             disabled={busy}
             onClick={async () => {
               const ok = await reconnect();
-              if (ok) done(await publishMirror({ force: true, allowPrompt: false }), '공유 내용을 올렸습니다');
+              if (ok) {
+                done(await publishMirror({ force: true, allowPrompt: false }), '공유 내용을 올렸습니다');
+                void importProposals();
+              }
               else bump((n) => n + 1);
             }}
           >
@@ -152,6 +159,38 @@ export function SharePage() {
           드라이브에서 열기
         </a>
       </div>
+
+      <h3 class="share-h">손님 제안</h3>
+      <p class="hint">
+        손님이 보낸 제안은 자동으로 「입력 대기」에 들어옵니다(앱을 열 때와 5분마다 확인). 실제로 가계부에 넣을지는 입력 대기에서 정합니다.
+      </p>
+      {proposalError.value ? <p class="form-error">{proposalError.value}</p> : null}
+      <div class="btn-row">
+        <button
+          type="button"
+          class="btn"
+          disabled={busy || proposalBusy.value || !hasToken}
+          onClick={async () => {
+            const r = await importProposals();
+            if (r.ok && r.added === 0) showToast('새 제안이 없습니다');
+            if (!r.ok) setMsg(r.error);
+            else setMsg(null);
+            bump((n) => n + 1);
+          }}
+        >
+          <Ui name="RefreshCw" size={18} />
+          {proposalBusy.value ? '확인 중…' : '지금 제안 확인'}
+        </button>
+        {proposals.value.length > 0 ? (
+          <button type="button" class="btn primary" onClick={openQueue}>
+            입력 대기 열기 ({proposals.value.length}건 제안)
+          </button>
+        ) : null}
+      </div>
+      <p class="hint">
+        마지막 확인: {proposalCheckedAt.value ? when(proposalCheckedAt.value) : '아직 확인하지 않았습니다'}
+        {proposalIgnored.value > 0 ? ` · 건너뛴 파일 ${proposalIgnored.value}개(형식이 맞지 않거나 초대하지 않은 계정이 올린 것)` : ''}
+      </p>
 
       <h3 class="share-h">손님 ({cfg.guests.length}/{MAX_GUESTS})</h3>
       {cfg.guests.length === 0 ? (
@@ -216,7 +255,7 @@ export function SharePage() {
       </form>
       {full ? <p class="hint">손님은 최대 {MAX_GUESTS}명까지 초대할 수 있습니다.</p> : null}
       <p class="hint">
-        초대하면 손님에게 읽기 권한이 부여됩니다(알림 메일은 가지 않으니 직접 알려 주세요). 손님이 받아 보는 화면은 다음 업데이트에서 열립니다.
+        초대하면 손님에게 읽기 권한이 부여됩니다(알림 메일은 가지 않으니 직접 알려 주세요). 손님은 설정 → 계정 공유 → 「공유받은 가계부 열기」에서 파일 선택 창으로 <b>가계부 공유 → data → mirror.json</b>을 고르면 열립니다.
       </p>
 
       <h3 class="share-h">공유 끄기</h3>

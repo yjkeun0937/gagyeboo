@@ -21,7 +21,7 @@ import {
 } from './auth';
 import { AuthError, GoogleDriveClient, OfflineError } from './drive';
 import { emptySyncState, previewMerge, syncOnce, SyncError, type SyncState } from './engine';
-import { clearShareLocal, initShare, restoreShareFromDrive, schedulePublish, shareConfig } from './share';
+import { clearShareLocal, importProposals, initShare, restoreShareFromDrive, schedulePublish, shareConfig, startProposalWatcher } from './share';
 
 export type SyncStatus = 'local' | 'idle' | 'syncing' | 'offline' | 'reconnect' | 'error';
 
@@ -97,6 +97,7 @@ export async function syncNow(reason: SyncReason = 'manual'): Promise<void> {
     syncStatus.value = 'idle';
     if (reason === 'start' || reason === 'login' || reason === 'manual') await restoreShareFromDrive();
     if (r.pulled > 0 || r.changed || reason === 'login') schedulePublish(5000);
+    if (reason === 'start' || reason === 'login' || reason === 'manual') void importProposals();
   } catch (e) {
     if (e instanceof AuthError) {
       forgetToken();
@@ -292,6 +293,7 @@ export async function initSync(): Promise<void> {
     if (cachedToken()) void syncNow('start');
     else syncStatus.value = 'reconnect';
   }
+  startProposalWatcher();
   const tick = (reason: SyncReason, minGap: number) => {
     if (!account.value || document.hidden) return;
     if (Date.now() - lastRun < minGap) return;

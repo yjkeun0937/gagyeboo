@@ -102,7 +102,9 @@ export class FakeGoogle {
       const sid = sm?.[1];
       const body0 = req.postData() || '';
       const isUploadCreate = req.method() === 'POST' && url.pathname.startsWith('/upload/');
+      const listQ = req.method() === 'GET' && !sid ? (url.searchParams.get('q') || '').match(/'([^']+)' in parents/) : null;
       const sharedCall =
+        !!listQ ||
         isPerm ||
         (sid && this.gfiles.has(sid)) ||
         (req.method() === 'POST' && !sid && !url.pathname.startsWith('/upload/')) ||
@@ -137,6 +139,14 @@ export class FakeGoogle {
             if (!['GET', 'DELETE'].includes(req.method())) return insufficient();
             if (req.method() === 'DELETE' && f0.owner !== acct.email) return insufficient();
           }
+        }
+        if (listQ) {
+          if (!full) return json(403, { error: { code: 403, message: 'insufficient scope', errors: [{ reason: 'insufficientPermissions' }] } });
+          const kids = [...this.gfiles.values()].filter((x) => x.parents?.[0] === listQ[1] && !x.trashed);
+          const who2 = (email) => Object.values(this.accounts).find((a) => a.email === email)?.name || email;
+          return json(200, {
+            files: kids.map((x) => ({ id: x.id, name: x.name, trashed: x.trashed, size: String((x.content || '').length), createdTime: new Date(1.7e12 + 5000).toISOString(), owners: [{ emailAddress: x.owner, displayName: who2(x.owner) }] })),
+          });
         }
         const gf = (x) => ({ id: x.id, name: x.name, mimeType: x.mimeType, trashed: x.trashed, modifiedTime: new Date(1.7e12 + (x.writes || 0) * 1000).toISOString() });
         if (isPerm) {
