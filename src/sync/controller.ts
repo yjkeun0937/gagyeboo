@@ -21,7 +21,17 @@ import {
 } from './auth';
 import { AuthError, GoogleDriveClient, OfflineError } from './drive';
 import { emptySyncState, previewMerge, syncOnce, SyncError, type SyncState } from './engine';
-import { clearShareLocal, importProposals, initShare, restoreShareFromDrive, schedulePublish, shareConfig, startProposalWatcher } from './share';
+import {
+  clearShareLocal,
+  importProposals,
+  initShare,
+  restoreShareFromDrive,
+  schedulePublish,
+  shareConfig,
+  shareNeedsReconnect,
+  shareStale,
+  startProposalWatcher,
+} from './share';
 
 export type SyncStatus = 'local' | 'idle' | 'syncing' | 'offline' | 'reconnect' | 'error';
 
@@ -95,8 +105,14 @@ export async function syncNow(reason: SyncReason = 'manual'): Promise<void> {
     lastSyncAt.value = r.state.lastSyncAt ?? Date.now();
     if (r.pulled > 0 || r.changed) await reloadFromDb();
     syncStatus.value = 'idle';
-    if (reason === 'start' || reason === 'login' || reason === 'manual') await restoreShareFromDrive();
-    if (r.pulled > 0 || r.changed || reason === 'login') schedulePublish(5000);
+    // 다른 기기에서 켜거나 바꾼 공유 설정(손님 목록 등)을 이어받는다. 매번 읽지는 않는다
+    // (내용을 바꿀 때마다 도는 'change'와, 공유를 쓰지 않는 기기의 'timer'는 건너뜀)
+    if (reason !== 'change' && (reason !== 'timer' || shareConfig.value)) await restoreShareFromDrive();
+    // 손님이 보는 공유 내용(mirror.json)이 최신인지 확인한다. 내용이 같으면 올리지 않으므로 부담이 작다.
+    // 이전에 올리지 못했거나(만료·권한 없음) 이 기기가 아직 올린 적 없는 경우도 여기서 다시 시도한다.
+    const keepFresh =
+      r.pulled > 0 || r.changed || (reason !== 'timer' && reason !== 'change') || shareStale.value || shareNeedsReconnect.value;
+    if (keepFresh) schedulePublish(5000);
     if (reason === 'start' || reason === 'login' || reason === 'manual') void importProposals();
   } catch (e) {
     if (e instanceof AuthError) {

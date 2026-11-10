@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { builtInClientId, getClientId, preloadGis, setClientId } from '../sync/auth';
 import { account, clientIdTick, ensureDriveAccess, eraseDriveAndSignOut, lastSyncAt, reconnect, signIn, signingIn, signOut, syncError, syncNow, syncStatus, type SyncStatus } from '../sync/controller';
+import { shareConfig, shareNeedsReconnect } from '../sync/share';
 import { Ui } from '../ui/icons';
 import { accountModal, logoutDialog, openSettings } from '../ui/nav';
 import { askConfirm, Modal } from '../ui/overlay';
@@ -27,6 +28,8 @@ const STATUS_TEXT: Record<SyncStatus, string> = {
   error: '동기화 오류',
 };
 
+const SHARE_BLOCKED_TEXT = '공유 재연결 필요';
+
 function Avatar({ size = 24 }: { size?: number }) {
   const a = account.value;
   const [broken, setBroken] = useState(false);
@@ -46,7 +49,9 @@ export function AccountChip() {
   const vp = viewport.value;
   const acc = account.value;
   const st = syncStatus.value;
-  const label = acc ? `${STATUS_TEXT[st]} · ${acc.email}` : '이 기기에만 저장 중. 눌러서 구글 로그인';
+  // 동기화는 되지만 손님에게 보이는 공유 내용을 올리지 못하는 상태 (연결 만료·공유 권한 없음)
+  const shareBlocked = !!acc && st === 'idle' && !!shareConfig.value && shareNeedsReconnect.value;
+  const label = acc ? `${shareBlocked ? SHARE_BLOCKED_TEXT : STATUS_TEXT[st]} · ${acc.email}` : '이 기기에만 저장 중. 눌러서 구글 로그인';
   const text = !acc
     ? vp === 'desktop'
       ? '로그인하면 다른 기기와 동기화'
@@ -55,11 +60,14 @@ export function AccountChip() {
         : ''
     : vp === 'mobile'
       ? ''
-      : STATUS_TEXT[st];
+      : shareBlocked
+        ? SHARE_BLOCKED_TEXT
+        : STATUS_TEXT[st];
+  const tone = shareBlocked ? 'reconnect' : st;
   return (
     <button
       type="button"
-      class={`account-chip is-${st}`}
+      class={`account-chip is-${tone}`}
       aria-label={label}
       onPointerEnter={preloadGis}
       onFocus={preloadGis}
@@ -68,7 +76,7 @@ export function AccountChip() {
       {acc ? (
         <span class="chip-avatar">
           <Avatar size={22} />
-          <span class={`status-dot is-${st}`} aria-hidden="true" />
+          <span class={`status-dot is-${tone}`} aria-hidden="true" />
         </span>
       ) : (
         <Ui name="CloudOff" size={16} />
@@ -150,8 +158,19 @@ export function AccountPanel({ inModal }: { inModal?: boolean }) {
           </small>
         </div>
       </div>
+      {st !== 'reconnect' && shareConfig.value && shareNeedsReconnect.value ? (
+        <div class="notice" role="status">
+          <Ui name="TriangleAlert" size={18} />
+          <div>
+            <p>
+              <b>손님에게 최신 내용을 올리지 못하고 있습니다.</b> 이 기기의 구글 연결에 공유 권한(드라이브 전체)이 없거나 만료되었습니다. 다시
+              연결하면서 모든 항목을 허용해 주세요. 그동안 손님은 마지막으로 올린 내용을 봅니다.
+            </p>
+          </div>
+        </div>
+      ) : null}
       <div class="btn-row">
-        {st === 'reconnect' ? (
+        {st === 'reconnect' || (shareConfig.value && shareNeedsReconnect.value) ? (
           <button type="button" class="btn primary" disabled={busy} onClick={() => void reconnect()}>
             <Ui name="RefreshCw" size={18} />
             {busy ? '연결 중…' : '구글 다시 연결'}

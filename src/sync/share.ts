@@ -47,6 +47,8 @@ export const shareConfig = signal<ShareConfig | null>(null);
 export const shareBusy = signal(false);
 /** 바뀐 내용을 아직 손님에게 올리지 못한 상태 */
 export const shareStale = signal(false);
+/** 구글 연결이 만료되었거나 공유 권한(드라이브 전체)이 없어 올리지 못한 상태. 다시 연결해야 풀린다 */
+export const shareNeedsReconnect = signal(false);
 export const sharePublishedAt = signal<number | null>(null);
 export const shareError = signal<string | null>(null);
 /** 손님 제안 확인 상태 */
@@ -95,6 +97,7 @@ export async function initShare(): Promise<void> {
 
 /** 로그인·동기화 뒤: 다른 기기에서 켠 공유 설정이 드라이브에 있으면 이 기기에도 가져온다 */
 export async function restoreShareFromDrive(): Promise<void> {
+  if (shareBusy.value) return;
   try {
     const client = new GoogleDriveClient(() => cachedToken());
     const f = await driveFile(client);
@@ -116,6 +119,7 @@ export async function clearShareLocal(): Promise<void> {
   shareConfig.value = null;
   sharePublishedAt.value = null;
   shareStale.value = false;
+  shareNeedsReconnect.value = false;
   shareError.value = null;
   setShareScopeWanted(false);
 }
@@ -205,6 +209,7 @@ export async function publishMirror(opts: { force?: boolean; allowPrompt?: boole
   const token = await shareToken(!!opts.allowPrompt);
   if (!token) {
     shareStale.value = true;
+    shareNeedsReconnect.value = true;
     return fail(NEED_RECONNECT, true);
   }
   publishing = true;
@@ -214,6 +219,7 @@ export async function publishMirror(opts: { force?: boolean; allowPrompt?: boole
     const prev = (await db().meta.get('sharePublish'))?.value as { at: number; hash: string } | undefined;
     if (!opts.force && prev?.hash === hash) {
       shareStale.value = false;
+      shareNeedsReconnect.value = false;
       return { ok: true };
     }
     const body = JSON.stringify(mirror);
@@ -226,9 +232,11 @@ export async function publishMirror(opts: { force?: boolean; allowPrompt?: boole
       await save({ ...cfg, mirrorId: id });
       r = c;
     }
-    if (r.status === 401) {
-      forgetToken();
+    if (r.status === 401 || r.status === 403) {
+      // 401 = 로그인 만료, 403 = 공유 권한(드라이브 전체)이 없는 토큰
+      if (r.status === 401) forgetToken();
       shareStale.value = true;
+      shareNeedsReconnect.value = true;
       return fail(NEED_RECONNECT, true);
     }
     if (!r.ok) {
@@ -238,6 +246,7 @@ export async function publishMirror(opts: { force?: boolean; allowPrompt?: boole
     await db().meta.put({ key: 'sharePublish', value: { at: mirror.publishedAt, hash } });
     sharePublishedAt.value = mirror.publishedAt;
     shareStale.value = false;
+    shareNeedsReconnect.value = false;
     shareError.value = null;
     return { ok: true };
   } catch (e) {
