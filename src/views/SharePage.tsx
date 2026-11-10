@@ -21,19 +21,12 @@ import {
   type ShareResult,
 } from '../sync/share';
 import { proposals, showToast } from '../store/store';
+import { whenText } from '../lib/when';
 import { Ui } from '../ui/icons';
 import { accountModal, openQueue } from '../ui/nav';
 import { askConfirm } from '../ui/overlay';
 
-function when(t: number | null): string {
-  if (!t) return '아직 올린 적이 없습니다';
-  const sec = Math.round((Date.now() - t) / 1000);
-  if (sec < 60) return '방금 전';
-  if (sec < 3600) return `${Math.floor(sec / 60)}분 전`;
-  const d = new Date(t);
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  return sec < 86400 ? `오늘 ${hm}` : `${d.getMonth() + 1}월 ${d.getDate()}일 ${hm}`;
-}
+const when = (t: number | null) => whenText(t, Date.now(), '아직 올린 적이 없습니다');
 
 const day = (t: number) => {
   const d = new Date(t);

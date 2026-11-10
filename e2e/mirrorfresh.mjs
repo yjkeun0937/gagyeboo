@@ -74,6 +74,9 @@ ok(await waitMirror('닫기전상점', 20000), '다시 열면 바뀐 내용이 �
 console.log('\n[2] 공유 권한이 없는 두 번째 주인 기기: 주인 화면에서 바로 알려 주고 복구된다');
 const B = await device('mobile', { width: 390, height: 844 });
 await B.signIn();
+await B.page.waitForSelector('.confirm-msg', { timeout: 8000 });
+ok((await B.page.locator('.confirm-msg').innerText()).includes('손님과 공유 중'), '공유 권한이 없으면 앱에서 바로 물어봄');
+await B.page.getByRole('button', { name: '나중에' }).click();
 await B.page.waitForSelector('.account-chip.is-reconnect', { timeout: 15000 }).catch(() => {});
 ok((await B.page.locator('.account-chip').getAttribute('class')).includes('is-reconnect'), '계정 칩이 공유 재연결 필요 상태로 바뀜 (설정 화면을 열지 않아도)');
 ok(((await B.page.locator('.account-chip').getAttribute('aria-label')) || '').includes('공유 재연결 필요'), '칩 설명에 「공유 재연결 필요」');
@@ -90,16 +93,34 @@ ok((await B.scope()).split(' ').includes(FULL), '다시 연결할 때 드라이�
 ok(await waitMirror('둘째기기상점', 15000), '다시 연결하면 쌓였던 변경이 별도 입력 없이 미러에 올라감');
 ok(inMirror('닫기전상점'), '다른 기기가 올린 내용도 함께 들어 있음');
 
+console.log('\n[2b] 같은 상황에서 묻는 창의 「구글 다시 연결」로 바로 허용');
+const C = await device('desktop2', { width: 1280, height: 800 });
+await C.signIn();
+await C.page.waitForSelector('.confirm-msg', { timeout: 8000 });
+await C.page.getByRole('button', { name: '구글 다시 연결' }).click();
+await C.page.waitForFunction(() => !document.querySelector('.account-chip.is-reconnect') && !document.querySelector('.confirm-msg'), null, { timeout: 10000 });
+ok((await C.scope()).split(' ').includes(FULL), '묻는 창에서 허용하면 공유 권한이 들어감');
+await C.addEntry('셋째기기상점', 3333);
+ok(await waitMirror('셋째기기상점', 30000), '셋째 기기의 변경도 손님 미러에 올라감');
+
 console.log('\n[3] 이미 최신이면 불필요하게 다시 올리지 않는다');
-await sleep(500);
-const w = g('mirror.json').writes;
+// 다른 기기의 변경을 받은 기기는 합쳐진 내용을 한 번씩 올릴 수 있다 → 먼저 그 과정을 끝낸다
 await B.page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
 await A.page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-await sleep(8000);
-ok(g('mirror.json').writes <= w + 1, `쓰기 횟수 ${w} → ${g('mirror.json').writes}`);
+await sleep(12000);
+const w = g('mirror.json').writes;
+// 그 뒤로는 바뀐 것이 없으므로 몇 번을 확인해도 쓰지 않는다
+for (let i = 0; i < 2; i++) {
+  await sleep(21000); // 다시 보기 사이의 최소 간격(20초)
+  await B.page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await A.page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await sleep(7000);
+}
+ok(g('mirror.json').writes === w, `쓰기 횟수 변화 없음 (${w} → ${g('mirror.json').writes})`);
 
 ok(A.errs.length === 0, '콘솔 오류 없음(A) ' + A.errs.join(' | '));
 ok(B.errs.length === 0, '콘솔 오류 없음(B) ' + B.errs.join(' | '));
+ok(C.errs.length === 0, '콘솔 오류 없음(C) ' + C.errs.join(' | '));
 await browser.close();
 console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');
 process.exit(failed ? 1 : 0);

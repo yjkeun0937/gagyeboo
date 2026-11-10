@@ -19,19 +19,12 @@ import {
 import { pickerConfig, pickerReady, setPickerConfig } from '../sync/picker';
 import { won } from '../lib/format';
 import { showToast } from '../store/store';
+import { whenText } from '../lib/when';
 import { Ui } from '../ui/icons';
 import { openSettings } from '../ui/nav';
 import { viewport } from '../ui/viewport';
 
-function when(t: number | null | undefined): string {
-  if (!t) return '-';
-  const sec = Math.round((Date.now() - t) / 1000);
-  if (sec < 60) return '방금 전';
-  if (sec < 3600) return `${Math.floor(sec / 60)}분 전`;
-  const d = new Date(t);
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  return sec < 86400 ? `오늘 ${hm}` : `${d.getMonth() + 1}월 ${d.getDate()}일 ${hm}`;
-}
+const when = (t: number | null | undefined) => whenText(t);
 
 const STATUS_TEXT: Record<GuestStatus, string> = {
   ok: '읽기 전용',
@@ -173,6 +166,11 @@ export function GuestPage() {
           {line.sub ? <small class="muted">{line.sub}</small> : null}
         </div>
       </div>
+      {!cut ? (
+        <p class="hint">
+          주인의 기기에서 앱이 열려 있을 때 새 내용이 올라옵니다. 「주인이 올린 시각」이 오래되었다면 주인에게 앱을 열어 달라고 알려 주세요.
+        </p>
+      ) : null}
       {msg ? <p class="form-error">{msg}</p> : null}
 
       {cut ? (

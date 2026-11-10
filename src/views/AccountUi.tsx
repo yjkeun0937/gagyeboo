@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { builtInClientId, getClientId, preloadGis, setClientId } from '../sync/auth';
 import { account, clientIdTick, ensureDriveAccess, eraseDriveAndSignOut, lastSyncAt, reconnect, signIn, signingIn, signOut, syncError, syncNow, syncStatus, type SyncStatus } from '../sync/controller';
 import { shareConfig, shareNeedsReconnect } from '../sync/share';
+import { whenText } from '../lib/when';
 import { Ui } from '../ui/icons';
 import { accountModal, logoutDialog, openSettings } from '../ui/nav';
 import { askConfirm, Modal } from '../ui/overlay';
@@ -10,13 +11,7 @@ import { viewport } from '../ui/viewport';
 /* ───────── 표시용 도우미 ───────── */
 
 function agoText(t: number | null): string {
-  if (!t) return '아직 동기화한 적이 없습니다';
-  const sec = Math.round((Date.now() - t) / 1000);
-  if (sec < 60) return '방금 전에 동기화했습니다';
-  if (sec < 3600) return `${Math.floor(sec / 60)}분 전에 동기화했습니다`;
-  const d = new Date(t);
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  return sec < 86400 ? `오늘 ${hm}에 동기화했습니다` : `${d.getMonth() + 1}월 ${d.getDate()}일 ${hm}에 동기화했습니다`;
+  return t ? `${whenText(t)}에 동기화했습니다` : '아직 동기화한 적이 없습니다';
 }
 
 const STATUS_TEXT: Record<SyncStatus, string> = {

@@ -2,13 +2,14 @@
  * 로그인·동기화 흐름과 화면용 상태.
  * 입력은 언제나 먼저 로컬에 저장되고, 동기화는 그 뒤에 따로 돈다. 로그인이 풀려도 입력은 막히지 않는다.
  */
-import { signal } from '@preact/signals';
+import { effect, signal } from '@preact/signals';
 import { db } from '../store/db';
 import { reloadFromDb, setChangeListener, showToast, wipeLocalOnly } from '../store/store';
 import { accountModal } from '../ui/nav';
 import { askConfirm } from '../ui/overlay';
 import {
   AuthFlowError,
+  cachedShareToken,
   cachedToken,
   fetchUserInfo,
   forgetToken,
@@ -108,6 +109,8 @@ export async function syncNow(reason: SyncReason = 'manual'): Promise<void> {
     // 다른 기기에서 켜거나 바꾼 공유 설정(손님 목록 등)을 이어받는다. 매번 읽지는 않는다
     // (내용을 바꿀 때마다 도는 'change'와, 공유를 쓰지 않는 기기의 'timer'는 건너뜀)
     if (reason !== 'change' && (reason !== 'timer' || shareConfig.value)) await restoreShareFromDrive();
+    // 손님과 공유 중인데 이 기기의 연결에 공유 권한이 없으면 바로 알린다(올리기를 시도하기 전에)
+    if (shareConfig.value && shareConfig.value.guests.length > 0 && !cachedShareToken()) shareNeedsReconnect.value = true;
     // 손님이 보는 공유 내용(mirror.json)이 최신인지 확인한다. 내용이 같으면 올리지 않으므로 부담이 작다.
     // 이전에 올리지 못했거나(만료·권한 없음) 이 기기가 아직 올린 적 없는 경우도 여기서 다시 시도한다.
     const keepFresh =
@@ -310,6 +313,24 @@ export async function initSync(): Promise<void> {
     else syncStatus.value = 'reconnect';
   }
   startProposalWatcher();
+  // 이 기기에 공유 권한이 없어 손님에게 올리지 못하면, 앱을 연 동안 한 번 물어서 바로 허용할 수 있게 한다
+  let asked = false;
+  effect(() => {
+    if (asked || !shareNeedsReconnect.value || !shareConfig.value || syncStatus.value !== 'idle') return;
+    asked = true;
+    setTimeout(() => {
+      if (!shareNeedsReconnect.value) return;
+      void askConfirm({
+        title: '손님에게 최신 내용을 보내려면 권한이 필요합니다',
+        message:
+          '이 가계부는 손님과 공유 중인데, 이 기기의 구글 연결에는 공유 권한(드라이브 전체)이 없어 바뀐 내용을 손님에게 올리지 못하고 있습니다. 「구글 다시 연결」을 누르고 권한 화면에서 모든 항목을 허용해 주세요. 한 번 허용하면 이 기기에서는 다시 묻지 않습니다.',
+        confirmLabel: '구글 다시 연결',
+        cancelLabel: '나중에',
+      }).then((ok) => {
+        if (ok) void reconnect();
+      });
+    }, 1500);
+  });
   const tick = (reason: SyncReason, minGap: number) => {
     if (!account.value || document.hidden) return;
     if (Date.now() - lastRun < minGap) return;

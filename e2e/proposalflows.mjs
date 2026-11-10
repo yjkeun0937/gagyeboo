@@ -184,7 +184,8 @@ await sleep(1500);
 const C = await device('owner2', { width: 1366, height: 900 }, 'alice');
 await C.page.locator('.account-chip').click();
 await C.page.getByRole('button', { name: '구글 계정으로 로그인' }).click();
-await C.page.waitForSelector('.account-chip.is-idle', { timeout: 8000 });
+await C.page.waitForSelector('.account-chip.is-idle, .account-chip.is-reconnect', { timeout: 8000 });
+await C.page.getByRole('button', { name: '나중에' }).click({ timeout: 10000 }); // 공유 권한이 없는 기기에서 묻는 창
 await C.page.waitForTimeout(1500);
 await C.openSettingsPage('계정 공유');
 await C.page.getByRole('button', { name: '구글 다시 연결' }).click();

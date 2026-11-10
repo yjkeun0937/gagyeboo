@@ -27,7 +27,7 @@ async function device(name, vp) {
     await page.locator('.account-chip').click();
     await page.waitForSelector('.modal');
     await page.getByRole('button', { name: '구글 계정으로 로그인' }).click();
-    await page.waitForSelector('.account-chip.is-idle', { timeout: 8000 });
+    await page.waitForSelector('.account-chip.is-idle, .account-chip.is-reconnect', { timeout: 8000 });
   };
   d.openShare = async () => {
     await page.locator('.tab[data-tab="settings"]').click();
@@ -134,7 +134,8 @@ ok(g('mirror.json').writes === w2 + 1, '수동 갱신은 내용이 같아도 올
 console.log('\n[F] 다른 기기(모바일): 로그인하면 공유 설정을 이어받고, 다시 연결하면 관리할 수 있다');
 const B = await device('mobile', { width: 390, height: 844 });
 await B.signIn();
-await B.page.waitForTimeout(800);
+await B.page.getByRole('button', { name: '나중에' }).click({ timeout: 10000 }); // 공유 권한이 없는 기기에서 묻는 창
+await B.page.waitForTimeout(300);
 await B.openShare();
 ok((await B.page.locator('.share-page').innerText()).includes('bob@example.com'), '손님 목록을 이어받음');
 ok((await B.page.locator('.share-page').innerText()).includes('다시 연결 필요'), '이 기기는 공유 권한이 없어 다시 연결 필요');
